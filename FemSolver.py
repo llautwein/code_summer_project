@@ -10,9 +10,9 @@ class FemSolver:
     def g_boundary(x, on_boundary):
         return on_boundary
 
-    def solve(self, problem: ProblemDefinition, mesh, degree):
-        V = VectorFunctionSpace(mesh, "CG", degree)
-        bc = DirichletBC(V, problem.g, self.g_boundary)
+    def solve(self, problem: ProblemDefinition, V):
+        g = problem.g
+        bc = DirichletBC(V, g, self.g_boundary)
 
         u = TrialFunction(V)
         v = TestFunction(V)

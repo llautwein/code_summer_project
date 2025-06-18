@@ -44,3 +44,20 @@ class Visualiser:
         plt.legend()
         plt.show()
 
+    def mesh_plot(self, mesh_list, ax_equal=False):
+        fig, ax = plt.subplots()
+
+        for mesh in mesh_list:
+            coords = mesh.coordinates()
+            x = coords[:, 0]
+            y = coords[:, 1]
+
+            triangles = mesh.cells()
+
+            ax.triplot(x, y, triangles, linewidth=0.5)
+
+        if ax_equal:
+            ax.set_aspect('equal')
+
+        plt.show()
+

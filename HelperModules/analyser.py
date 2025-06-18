@@ -20,8 +20,9 @@ class Analyser:
                 n = int(round(1/h))
                 print(f"Degree d={d}, step size h={h}, n={n}")
                 mesh = UnitSquareMesh(n, n)
+                V = FunctionSpace(mesh, "CG", d)
 
-                u_h = solver.solve(self.problem, mesh, d)
+                u_h = solver.solve(self.problem, V)
 
                 errors_L2.append(errornorm(u_exact, u_h, 'L2', mesh=mesh))
                 errors_H1.append(errornorm(u_exact, u_h, 'H1', mesh=mesh))
