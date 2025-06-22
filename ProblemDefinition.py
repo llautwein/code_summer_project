@@ -14,16 +14,14 @@ class ProblemDefinition(abc.ABC):
     def L(self, v):
         pass
 
-    @abc.abstractmethod
-    def g(self):
-        pass
-
 
 class PoissonProblem(ProblemDefinition):
+    """
+    Implements the Poisson equation.
+    """
 
-    def __init__(self, f, g):
+    def __init__(self, f):
         self.f = f
-        self.g = g
 
     def a(self, u, v):
         return inner(grad(u), grad(v))*dx
@@ -31,15 +29,12 @@ class PoissonProblem(ProblemDefinition):
     def L(self, v):
         return self.f * v * dx
 
-    def g(self):
-        return self.g
 
 
 class HelmholtzProblem(ProblemDefinition):
 
-    def __init__(self, f, g):
+    def __init__(self, f):
         self.f = f
-        self.g = g
 
     def a(self, u, v):
         return (inner(grad(u), grad(v)) + u*v) * dx
@@ -47,9 +42,8 @@ class HelmholtzProblem(ProblemDefinition):
     def L(self, v):
         return self.f * v * dx
 
-    def g(self):
-        return self.g
 
+"""
 class LinearElasticity(ProblemDefinition):
 
     def __init__(self, g):
@@ -61,6 +55,9 @@ class LinearElasticity(ProblemDefinition):
         self.C = - (30*self.E*(1-self.nu)) / ((1+self.nu)*(1-2*self.nu))
 
     def a(self, u, v):
+        print("test")
+        print(inner(grad(u), grad(v)))
+        print(div(u) * div(v))
         return (-self.A * inner(grad(u), grad(v)) - self.B * div(u) * div(v)) * dx
 
     def L(self, v):
@@ -69,5 +66,5 @@ class LinearElasticity(ProblemDefinition):
 
     def g(self):
         return self.g
-
+"""
 

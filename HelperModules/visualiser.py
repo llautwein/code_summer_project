@@ -61,3 +61,39 @@ class Visualiser:
 
         plt.show()
 
+    @staticmethod
+    def heatmap_plot(u_sol, mesh):
+
+        fig, ax = plt.subplots(figsize=(8, 7))
+
+        vertex_coords = mesh.coordinates()
+        x = vertex_coords[:, 0]
+        y = vertex_coords[:, 1]
+        triangles = mesh.cells()
+        z = u_sol.compute_vertex_values(mesh)
+
+
+        contour = ax.tricontourf(x, y, triangles, z, levels=20, cmap=plt.cm.viridis)
+        ax.set_xlabel("x-axis")
+        ax.set_ylabel("y-axis")
+
+        ax.set_aspect('equal')
+
+        fig.colorbar(contour, ax=ax)
+
+        plt.show()
+
+    def plot_overlap_difference(self, u1, mesh1, u2):
+        """
+        Creates a heatmap of the difference |u1 - u2| in the overlap region.
+        """
+        print("\n--- Plotting difference function in overlap region ---")
+        V1 = u1.function_space()
+        u2_on_mesh1 = Function(V1)
+        u2.set_allow_extrapolation(True)
+        u2_on_mesh1.interpolate(u2)
+
+        difference_func = project(abs(u1 - u2_on_mesh1), V1)
+
+        self.heatmap_plot(difference_func, mesh1)
+

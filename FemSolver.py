@@ -5,21 +5,8 @@ class FemSolver:
     """
     Class that solves a linear variational problem for a given problem formulation
     """
-
-    @staticmethod
-    def g_boundary(x, on_boundary):
-        return on_boundary
-
-    def solve(self, problem: ProblemDefinition, V):
-        g = problem.g
-        bc = DirichletBC(V, g, self.g_boundary)
-
-        u = TrialFunction(V)
-        v = TestFunction(V)
-        a = problem.a(u, v)
-        L = problem.L(v)
-
+    def solve(self, V, a_form, L_form, bcs):
         u_sol = Function(V)
-        solve(a == L, u_sol, bc)
+        solve(a_form == L_form, u_sol, bcs)
         return u_sol
 
