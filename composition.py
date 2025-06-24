@@ -4,6 +4,7 @@ import FemSolver as fem_solver
 import ProblemDefinition as problem_def
 import matplotlib.pyplot as plt
 import CompositionMethod as cm
+import numpy as np
 
 geo_parser = geometry_parser.GeometryParser(0.1)
 geo_parser.rectangle_mesh((0, 0), 1, 1, "rectangle")
@@ -57,9 +58,10 @@ f_2 = Constant(-6.0)
 helmholtz = problem_def.HelmholtzProblem(f_1)
 poisson = problem_def.PoissonProblem(f_2)
 
+
 schwarz_algorithm = cm.SchwarzMethod_primitive(V_1, mesh_rectangle, boundary_markers_1, helmholtz, g_1,
                                                V_2, mesh_circle, boundary_markers_2, helmholtz, g_1)
-u1, u2 = schwarz_algorithm.solve(1e-7, 100)
+#u1, u2 = schwarz_algorithm.solve(1e-7, 100)
 
 """
 solver = fem_solver.FemSolver()
@@ -70,6 +72,7 @@ helmholtz = problem_def.HelmholtzProblem(f, u0)
 """
 vs = visualiser.Visualiser()
 #vs.mesh_plot([mesh_rectangle, mesh_circle], True)
-vs.heatmap_plot(u1, mesh_rectangle)
-vs.heatmap_plot(u2, mesh_circle)
-vs.plot_overlap_difference(u1, mesh_rectangle, u2)
+#vs.heatmap_plot(u1, mesh_rectangle)
+#vs.heatmap_plot(u2, mesh_circle)
+#vs.plot_overlap_difference(u1, mesh_rectangle, u2)
+
