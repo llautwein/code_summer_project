@@ -1,12 +1,12 @@
 //parsed geo-file
 
-lc = 0.05;
+lc = 0.3;
 
 // Circle Geometry
-Point(5) = {1.7, 1, 0, lc};
-Point(6) = {1, 1.7, 0, lc};
-Point(7) = {0.30000000000000004, 1, 0, lc};
-Point(8) = {1, 0.30000000000000004, 0, lc};
+Point(5) = {1.5, 1, 0, lc};
+Point(6) = {1, 1.5, 0, lc};
+Point(7) = {0.5, 1, 0, lc};
+Point(8) = {1, 0.5, 0, lc};
 Point(9) = {1, 1, 0, lc};
 
 Circle(5) = {5, 9, 6};

@@ -1,11 +1,11 @@
 //parsed geo-file
 
-lc = 0.05;
+lc = 0.3;
 
 // Rectangle Geometry
 Point(1) = {0, 0, 0, lc};
-Point(2) = {1.5, 0, 0, lc};
-Point(3) = {1.5, 1, 0, lc};
+Point(2) = {1, 0, 0, lc};
+Point(3) = {1, 1, 0, lc};
 Point(4) = {0, 1, 0, lc};
 Line(1) = {1, 2};
 Line(2) = {2, 3};

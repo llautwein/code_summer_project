@@ -4,9 +4,9 @@ import ProblemDefinition as problem_def
 import CompositionMethod as cm
 import InterfaceHandler as ih
 
-geo_parser = geometry_parser.GeometryParser(0.05)
-geo_parser.rectangle_mesh((0, 0), 1.5, 1, "rectangle")
-geo_parser.circle_mesh((1, 1), 0.7, "circle")
+geo_parser = geometry_parser.GeometryParser(0.3)
+geo_parser.rectangle_mesh((0, 0), 1, 1, "rectangle")
+geo_parser.circle_mesh((1, 1), 0.5, "circle")
 mesh_rectangle = geo_parser.load_mesh("rectangle")
 #mesh_rectangle = UnitSquareMesh(5, 5)
 mesh_circle = geo_parser.load_mesh("circle")
@@ -63,16 +63,22 @@ poisson = problem_def.PoissonProblem(f_2)
 vs = visualiser.Visualiser()
 vs.mesh_plot([mesh_rectangle, mesh_circle], True)
 
-schwarz_matrix = cm.SchwarzMethod_matrix(V_1, mesh_rectangle, boundary_markers_1, helmholtz, g_1,
-                 V_2, mesh_circle, boundary_markers_2, helmholtz, g_1)
-u1_m, u2_m = schwarz_matrix.solve(1e-4, 100)
+#schwarz_matrix = cm.SchwarzMethod_matrix(V_1, mesh_rectangle, boundary_markers_1, helmholtz, g_1,
+#                 V_2, mesh_circle, boundary_markers_2, helmholtz, g_1)
+#u1_m, u2_m = schwarz_matrix.solve(1e-4, 100)
 
-schwarz_primitive = cm.SchwarzMethod_primitive(V_1, mesh_rectangle, boundary_markers_1, helmholtz, g_1,
-                 V_2, mesh_circle, boundary_markers_2, helmholtz, g_1)
-u1_p, u2_p = schwarz_primitive.solve(1e-4, 100)
+#schwarz_primitive = cm.SchwarzMethod_primitive(V_1, mesh_rectangle, boundary_markers_1, helmholtz, g_1,
+#                 V_2, mesh_circle, boundary_markers_2, helmholtz, g_1)
+#u1_p, u2_p = schwarz_primitive.solve(1e-4, 100)
+zero = Constant(0)
+schwarz_operator = cm.SchwarzMethod_operator(V_1, mesh_rectangle, boundary_markers_1, helmholtz, g_1,
+                                             V_2, mesh_circle, boundary_markers_2, helmholtz, g_1)
+lambda_1, lambda_2, u1, u2 = schwarz_operator.solve(1e-4, max_iter=5)
 
-vs.heatmap_plot(u1_p, mesh_rectangle)
-vs.heatmap_plot(u2_p, mesh_circle)
-vs.heatmap_plot(u1_m, mesh_rectangle)
-vs.heatmap_plot(u2_m, mesh_circle)
+#vs.heatmap_plot(u1_p, mesh_rectangle)
+#vs.heatmap_plot(u2_p, mesh_circle)
+#vs.heatmap_plot(u1_m, mesh_rectangle)
+#vs.heatmap_plot(u2_m, mesh_circle)
+vs.heatmap_plot(u1, mesh_rectangle)
+vs.heatmap_plot(u2, mesh_circle)
 
