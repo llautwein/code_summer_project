@@ -1,6 +1,7 @@
 import FemSolver as fem_solver
 from dolfin import *
 import numpy as np
+from scipy.sparse.linalg import gmres, LinearOperator
 
 
 class CompositionMethod:
@@ -22,7 +23,7 @@ class CompositionMethod:
         pass
 
 
-class SchwarzMethod_primitive(CompositionMethod):
+class SchwarzMethod_alternating(CompositionMethod):
     def __init__(self, V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
                  V_2, mesh_2, boundary_markers_2, problem_def_2, g_2):
         super().__init__(V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
@@ -291,7 +292,6 @@ class SchwarzMethod_operator(CompositionMethod):
         interpolated_sol = np.zeros(len(dofs))
         u.set_allow_extrapolation(True)
         for i in range(len(dofs)):
-            print(f"Interpolation: coord={dof_coords[dofs[i]]}")
             interpolated_sol[i] = u(dof_coords[dofs[i]])
 
         return interpolated_sol
@@ -309,7 +309,7 @@ class SchwarzMethod_operator(CompositionMethod):
         Helper that writes the values of a vector corresponding to the dofs into a fenics function.
         :param vec: Vector of values.
         :param V: The function space of the fenics function.
-        :param dofs: The dof indices corresponding to the values of the vector.
+        :param dofs: The dof indices corresponding to the values of the vector and the function space V.
         :return: A fenics function with the assigned values.
         """
         u = Function(V)
@@ -342,3 +342,184 @@ class SchwarzMethod_operator(CompositionMethod):
             sol_2_on_gamma1 = self.interpolate_on_gamma(sol_2, self.V_1, self.dofs_1["interface"])
             self.lambda_1 = sol_2_on_gamma1
         return self.lambda_1, self.lambda_2, sol_1, sol_2
+
+
+class SchwarzMethod_operator_matrix(CompositionMethod):
+    def __init__(self, V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
+                 V_2, mesh_2, boundary_markers_2, problem_def_2, g_2):
+        super().__init__(V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
+                         V_2, mesh_2, boundary_markers_2, problem_def_2, g_2)
+
+        self.dofs_1 = self.get_dof_indices(V_1, boundary_markers_1, 1, 2)
+        self.dofs_2 = self.get_dof_indices(V_2, boundary_markers_2, 1, 2)
+
+        self.lambda_1 = np.zeros(len(self.dofs_1["interface"]))
+        self.lambda_2 = np.zeros(len(self.dofs_2["interface"]))
+
+        self.fem_solver = fem_solver.FemSolver()
+
+    @staticmethod
+    def get_dof_indices(V, boundary_markers, physical_marker, interface_marker):
+        """
+        Function that returns the indices of dofs lying in interior, on the interface boundary, and
+        the physical/true boundary
+        :param V: the function space containing the dofs
+        :param boundary_markers: mesh function which contains the boundary markers
+        :param physical_marker: ID of the physical boundary
+        :param interface_marker: ID of the interface boundary
+        :return: dict with the needed indices
+        """
+        bc_interface = DirichletBC(V, Constant(0.0), boundary_markers, interface_marker)
+        interface_dofs = np.array(list(bc_interface.get_boundary_values().keys()), dtype=np.int32)
+
+        bc_physical = DirichletBC(V, Constant(0.0), boundary_markers, physical_marker)
+        physical_dofs = np.array(list(bc_physical.get_boundary_values().keys()), dtype=np.int32)
+        physical_dofs = np.setdiff1d(physical_dofs, interface_dofs).astype(np.int32)
+        all_dofs = np.arange(V.dim())
+
+        boundary_dofs = np.union1d(interface_dofs, physical_dofs).astype(np.int32)
+
+        interior_dofs = np.setdiff1d(all_dofs, boundary_dofs).astype(np.int32)
+
+        return {
+            'interior': interior_dofs,
+            'interface': interface_dofs,
+            'physical': physical_dofs
+        }
+
+    @staticmethod
+    def interpolate_on_gamma(u: Function, V: FunctionSpace, dofs):
+        """
+        Helper that interpolates the solution on one mesh onto the artificial boundary of the
+        other mesh.
+        :param u: The solution function on one mesh.
+        :param V: The function space corresponding to the other mesh with the artificial boundary
+        :param dofs: The dof indices of the artificial boundary.
+        :return: A vector containing the function values on the artificial boundary.
+        """
+        dof_coords = V.tabulate_dof_coordinates()
+        interpolated_sol = np.zeros(len(dofs))
+        u.set_allow_extrapolation(True)
+        for i in range(len(dofs)):
+            interpolated_sol[i] = u(dof_coords[dofs[i]])
+
+        return interpolated_sol
+
+    @staticmethod
+    def create_bcs(V, boundary_markers, bcs_definitions):
+        bcs = []
+        for value_expr, target_id in bcs_definitions:
+            bcs.append(DirichletBC(V, value_expr, boundary_markers, target_id))
+        return bcs
+
+    @staticmethod
+    def vector_to_function(vec, V, dofs):
+        """
+        Helper that writes the values of a vector corresponding to the dofs into a fenics function.
+        :param vec: Vector of values.
+        :param V: The function space of the fenics function.
+        :param dofs: The dof indices corresponding to the values of the vector and the function space V.
+        :return: A fenics function with the assigned values.
+        """
+        u = Function(V)
+        u_arr = u.vector().get_local()
+        for i in range(len(dofs)):
+            u_arr[dofs[i]] = vec[i]
+        u.vector().set_local(u_arr)
+        u.vector().apply("insert")
+        return u
+
+    def solve_subdomain_get_interface_values(self, lambda_vec, domain_idx,
+                                             use_homogeneous_bc=False, use_homogeneous_f=False):
+        """
+        Solves the problem for given lambda value on artificial boundary and in domain with
+        given domain index. Corresponds to the operator P in the notes.
+        :param lambda_vec: Value on artificial boundary
+        :param domain_idx: Index of the domain
+        :return:
+        """
+        if domain_idx == 1:
+            V, boundary_markers, problem_def = self.V_1, self.boundary_markers_1, self.problem_def_1
+            # Use original 'g' or a zero constant based on the flag
+            g = self.g_1 if not use_homogeneous_bc else Constant(0.0)
+            f_expr = problem_def.f if not use_homogeneous_f else Constant(0.0)
+            dofs_source, dofs_target = self.dofs_1, self.dofs_2
+            V_target = self.V_2
+        else:
+            V, boundary_markers, problem_def = self.V_2, self.boundary_markers_2, self.problem_def_2
+            # Use original 'g' or a zero constant based on the flag
+            g = self.g_2 if not use_homogeneous_bc else Constant(0.0)
+            f_expr = problem_def.f if not use_homogeneous_f else Constant(0.0)
+            dofs_source, dofs_target = self.dofs_2, self.dofs_1
+            V_target = self.V_1
+
+        w = self.vector_to_function(lambda_vec, V, dofs_source["interface"])
+        bcs = self.create_bcs(V, boundary_markers, [(g, 1), (w, 2)])
+        trial, test = TrialFunction(V), TestFunction(V)
+        a_form = problem_def.a(trial, test)
+        L_form = f_expr * test * dx
+        u_sol = self.fem_solver.solve(V, a_form, L_form, bcs)
+        u_sol_on_gamma = self.interpolate_on_gamma(u_sol, V_target, dofs_target["interface"])
+        return u_sol_on_gamma
+
+
+    def apply_operator(self, lambda_full_vec):
+        """
+        Applies the operator P to implement the matrix operator and to compute A lambda f.
+        :param lambda_full_vec:
+        :return:
+        """
+        n_1 = len(self.dofs_1["interface"])
+        self.lambda_1 = lambda_full_vec[:n_1]
+        self.lambda_2 = lambda_full_vec[n_1:]
+
+        P_1 = self.solve_subdomain_get_interface_values(self.lambda_1, 1,
+                                      True, True)
+        result_2 = self.lambda_2 - P_1
+
+        P_2 = self.solve_subdomain_get_interface_values(self.lambda_2, 2,
+                                      True, True)
+        result_1 = self.lambda_1 - P_2
+
+        return np.concatenate([result_1, result_2])
+
+    def construct_solution(self, lambda_solution, domain_idx):
+        if domain_idx == 1:
+            V, boundary_markers, problem_def, g = self.V_1, self.boundary_markers_1, self.problem_def_1, self.g_1
+            dofs_source = self.dofs_1
+        else:
+            V, boundary_markers, problem_def, g = self.V_2, self.boundary_markers_2, self.problem_def_2, self.g_2
+            dofs_source = self.dofs_2
+
+        w = self.vector_to_function(lambda_solution, V, dofs_source["interface"])
+        bcs = self.create_bcs(V, boundary_markers, [(g, 1), (w, 2)])
+        trial, test = TrialFunction(V), TestFunction(V)
+
+        u_final = self.fem_solver.solve(V, problem_def.a(trial, test), problem_def.L(test), bcs)
+        return u_final
+
+    def solve(self, tol, max_iter=100):
+
+        f_1 = self.solve_subdomain_get_interface_values(np.zeros_like(self.lambda_2), 2)
+        f_2 = self.solve_subdomain_get_interface_values(np.zeros_like(self.lambda_1), 1)
+
+        f = np.concatenate([f_1, f_2])
+
+        size = len(self.dofs_1["interface"]) + len(self.dofs_2["interface"])
+
+        A_operator = LinearOperator((size, size), self.apply_operator)
+
+        residuals = []
+        def callback(res):
+            residuals.append(res)
+            print(f"GMRES Iteration {len(residuals)}, Relative Residual = {res:.4e}")
+
+        lambda_solution, exit_code = gmres(A_operator, f,
+                                           maxiter=max_iter, callback=callback, restart=100)#, callback_type='pr_norm')
+        n_1 = len(self.dofs_1["interface"])
+        lambda_1_sol = lambda_solution[:n_1]
+        lambda_2_sol = lambda_solution[n_1:]
+
+        u_1_final = self.construct_solution(lambda_1_sol, 1)
+        u_2_final = self.construct_solution(lambda_2_sol, 2)
+        return u_1_final, u_2_final

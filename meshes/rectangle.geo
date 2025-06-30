@@ -1,6 +1,6 @@
 //parsed geo-file
 
-lc = 0.3;
+lc = 0.1;
 
 // Rectangle Geometry
 Point(1) = {0, 0, 0, lc};

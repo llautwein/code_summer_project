@@ -59,7 +59,7 @@ helmholtz = problem_def.HelmholtzProblem(f_1)
 poisson = problem_def.PoissonProblem(f_2)
 
 
-schwarz_algorithm = cm.SchwarzMethod_primitive(V_1, mesh_rectangle, boundary_markers_1, helmholtz, g_1,
+schwarz_algorithm = cm.SchwarzMethod_alternating(V_1, mesh_rectangle, boundary_markers_1, helmholtz, g_1,
                                                V_2, mesh_circle, boundary_markers_2, helmholtz, g_1)
 #u1, u2 = schwarz_algorithm.solve(1e-7, 100)
 

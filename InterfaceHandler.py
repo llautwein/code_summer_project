@@ -23,7 +23,6 @@ class InterfaceHandler:
                 p = facet.midpoint()
                 if bbt2.compute_first_entity_collision(p) < self.mesh2.num_cells():
                     boundary_markers_1[facet] = 2
-                    print("Gamma_1 marked!")
 
         bbt1 = self.mesh1.bounding_box_tree()
 
@@ -36,6 +35,5 @@ class InterfaceHandler:
                 p = facet.midpoint()
                 if bbt1.compute_first_entity_collision(p) < self.mesh1.num_cells():
                     boundary_markers_2[facet] = 2
-                    print("Gamma_2 marked!")
 
         return boundary_markers_1, boundary_markers_2
