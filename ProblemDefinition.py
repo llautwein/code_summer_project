@@ -30,8 +30,7 @@ class PoissonProblem(ProblemDefinition):
         return self.f * v * dx
 
 
-
-class HelmholtzProblem(ProblemDefinition):
+class ModelProblem(ProblemDefinition):
 
     def __init__(self, f):
         self.f = f
