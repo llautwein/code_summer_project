@@ -1,10 +1,10 @@
-from HelperModules import geometry_parser, visualiser
+from HelperModules import GeometryParser, visualiser
 from dolfin import *
 import ProblemDefinition as problem_def
 import CompositionMethod as cm
 import InterfaceHandler as ih
 
-geo_parser = geometry_parser.GeometryParser(0.1)
+geo_parser = GeometryParser.GeometryParser(0.01)
 geo_parser.rectangle_mesh((0, 0), 1, 1, "rectangle")
 geo_parser.circle_mesh((1, 1), 0.5, "circle")
 mesh_rectangle = geo_parser.load_mesh("rectangle")
@@ -15,7 +15,7 @@ interface_handler = ih.InterfaceHandler(mesh_rectangle, mesh_circle)
 
 boundary_markers_1, boundary_markers_2 = interface_handler.mark_interface_boundaries()
 
-File("boundary_markers.pvd") << boundary_markers_1
+File("output_files/boundary_markers.pvd") << boundary_markers_1
 
 V_1 = FunctionSpace(mesh_rectangle, "CG", 1)
 g_1 = Expression("sin(2*pi*x[0])*cos(2*pi*x[1])", degree=6)
@@ -35,12 +35,12 @@ vs.mesh_plot([mesh_rectangle, mesh_circle], True)
 
 
 # Select version of the Schwarz method (alternating, matrix free, algebraic)
-schwarz_algorithm = cm.SchwarzMethodMatrixFree(V_1, mesh_rectangle, boundary_markers_1, model_problem, g_1,
-                 V_2, mesh_circle, boundary_markers_2, model_problem, g_1)
+schwarz_algorithm = cm.SchwarzMethodAlgebraic(V_1, mesh_rectangle, boundary_markers_1, model_problem, g_1,
+                 V_2, mesh_circle, boundary_markers_2, poisson, g_2)
 u1, u2 = schwarz_algorithm.solve(1e-4, 100)
 
 vs.heatmap_plot(sol_analytic_rec, mesh_rectangle)
 vs.heatmap_plot(sol_analytic_circ, mesh_circle)
 vs.heatmap_plot(u1, mesh_rectangle)
 vs.heatmap_plot(u2, mesh_circle)
-
+vs.plot_overlap_difference(u1, mesh_rectangle, u2)

@@ -1,5 +1,8 @@
 import matplotlib.pyplot as plt
 from dolfin import *
+import pandas as pd
+import seaborn as sns
+import numpy as np
 
 class Visualiser:
     """
@@ -96,4 +99,55 @@ class Visualiser:
         difference_func = project(abs(u1 - u2_on_mesh1), V1)
 
         self.heatmap_plot(difference_func, mesh1)
+
+    def compare_ddm_methods_plot(self, results_path):
+        df = pd.read_csv(results_path)
+
+        sns.set_theme(style="whitegrid")
+
+        # Plot 1: Total Time vs. DoFs
+        plt.figure(figsize=(10, 6))
+        sns.lineplot(data=df, x='Total DoFs', y='Time (s)', hue='Method', marker='o', style='Method')
+        plt.xscale('log')
+        plt.yscale('log')
+        plt.xlabel('Total Degrees of Freedom (DoFs)')
+        plt.ylabel('Overall Run Time (s)')
+        plt.legend(title='Method')
+        plt.grid(True, which="both", ls="--")
+        plt.show()
+
+        # Plot 2: Iterations vs. DoFs
+        plt.figure(figsize=(10, 6))
+        sns.lineplot(data=df, x='Total DoFs', y='Iterations', hue='Method', marker='o', style='Method')
+        plt.xscale('log')
+        plt.xlabel('Total Degrees of Freedom (DoFs)')
+        plt.ylabel('Number of Iterations')
+        plt.legend(title='Method')
+        plt.grid(True, which="both", ls="--")
+        plt.show()
+
+    def analyse_algebraic_schwarz_plot(self, results_path, x_axis, y_axis, fixed_params_dict, compare_by):
+        df = pd.read_csv(results_path)
+        sns.set_theme(style="whitegrid")
+
+        df_copy = df.copy()
+        for param_name, list_values in fixed_params_dict.items():
+            if pd.api.types.is_float_dtype(df_copy[param_name]):
+                mask = pd.Series(False, index=df_copy.index)
+                for val in list_values:
+                    mask |= np.isclose(df_copy[param_name], val)
+                df_copy = df_copy[mask]
+            else:
+                df_copy = df_copy[df_copy[param_name].isin(list_values)]
+        sns.lineplot(data=df_copy, x=x_axis, y=y_axis,
+                     hue=compare_by, marker='o')
+
+        plt.xlabel(x_axis)
+        plt.xscale('log')
+        plt.ylabel(y_axis)
+        plt.yscale('log')
+        plt.show()
+
+
+
 

@@ -1,6 +1,6 @@
 //parsed geo-file
 
-lc = 0.1;
+lc = 0.01;
 
 // Circle Geometry
 Point(5) = {1.5, 1, 0, lc};

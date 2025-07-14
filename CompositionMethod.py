@@ -19,6 +19,10 @@ class CompositionMethod:
         self.V_2 = V_2
         self.g_2 = g_2  # original boundary condition of problem 2
         self.fem_solver = fem_solver.FemSolver()
+        self.last_iteration_count = 0
+
+    def get_last_iteration_count(self):
+        return self.last_iteration_count
 
     @staticmethod
     def get_dof_indices(V, boundary_markers, physical_marker, interface_marker):
@@ -234,6 +238,7 @@ class SchwarzMethodMatrixFree(CompositionMethod):
 
         u_1_final = self.construct_solution(lambda_1_sol, 1)
         u_2_final = self.construct_solution(lambda_2_sol, 2)
+        self.last_iteration_count = len(residuals) + 1
         return u_1_final, u_2_final
 
 
@@ -250,6 +255,7 @@ class SchwarzMethodAlgebraic(CompositionMethod):
 
         # pre computations for domain 1
         self.dofs_1 = self.get_dof_indices(V_1, boundary_markers_1, 1, 2)
+        self.n_1 = len(self.dofs_1["interface"])
         self.A_1, self.f_1 = self.assemble_system(V_1, problem_def_1)
 
         self.A_1_interior = self.A_1[self.dofs_1["interior"], :][:, self.dofs_1["interior"]].tocsc()
@@ -389,9 +395,8 @@ class SchwarzMethodAlgebraic(CompositionMethod):
 
     def apply_operator(self, lambda_full_vec):
 
-        n_1 = len(self.dofs_1["interface"])
-        lambda_1 = lambda_full_vec[:n_1]
-        lambda_2 = lambda_full_vec[n_1:]
+        lambda_1 = lambda_full_vec[:self.n_1]
+        lambda_2 = lambda_full_vec[self.n_1:]
 
         P_2_lambda = self.solve_subdomain_and_interpolate(2, lambda_2, True, True)
         result_1 = lambda_1 - P_2_lambda
@@ -402,6 +407,12 @@ class SchwarzMethodAlgebraic(CompositionMethod):
         return np.concatenate([result_1, results_2])
 
     def construct_final_solution(self, lambda_vec, domain_idx):
+        """
+        Solves the PDE with the correct boundary data once to obtain the final solution.
+        :param lambda_vec: The correct values on the artificial boundary.
+        :param domain_idx: The subdomain's index to solve on.
+        :return: The final solution function.
+        """
         if domain_idx == 1:
             # Select matrices and vectors for domain 1
             A_interior, A_gamma = self.A_1_interior, self.A_1_gamma1
@@ -429,11 +440,13 @@ class SchwarzMethodAlgebraic(CompositionMethod):
                                                       lambda_vec, g_vec)
         return u_func
 
-    def solve(self, tol, max_iter=100, restart=20):
+    def solve(self, tol, max_iter=100):
         # Set up of the right hand side corresponding to the first row
-        rhs1 = self.solve_subdomain_and_interpolate(2, np.zeros_like(self.dofs_2["interface"]))
+        rhs1 = self.solve_subdomain_and_interpolate(2, np.zeros_like(self.dofs_2["interface"]),
+                                                    False, False)
         # Set up of the right hand side corresponding to the second row
-        rhs2 = self.solve_subdomain_and_interpolate(1, np.zeros_like(self.dofs_1["interface"]))
+        rhs2 = self.solve_subdomain_and_interpolate(1, np.zeros_like(self.dofs_1["interface"]),
+                                                    False, False)
 
         rhs = np.concatenate([rhs1, rhs2])
 
@@ -447,12 +460,13 @@ class SchwarzMethodAlgebraic(CompositionMethod):
             print(f"GMRES iteration {len(residuals)}, relative residual = {res:.4e}")
 
         lambda_solution, exit_code = gmres(A_operator, rhs, maxiter=max_iter,
-                                           callback=callback, restart=20)
-        n_1 = len(self.dofs_1["interface"])
-        lambda_1_sol = lambda_solution[:n_1]
+                                           callback=callback, rtol=tol, restart=1000)
+
+        lambda_1_sol = lambda_solution[:self.n_1]
         u1 = self.construct_final_solution(lambda_1_sol, 1)
-        lambda_2_sol = lambda_solution[n_1:]
+        lambda_2_sol = lambda_solution[self.n_1:]
         u2 = self.construct_final_solution(lambda_2_sol, 2)
+        self.last_iteration_count = len(residuals) + 1
 
         return u1, u2
 
@@ -476,7 +490,8 @@ class SchwarzMethodAlternating(CompositionMethod):
         w_2 = Function(self.V_2)
         u1_prev = Function(self.V_1)
         u2_prev = Function(self.V_2)
-        for k in range(max_iter):
+        k = 0
+        while k < max_iter:
             if error_1 < tol and error_2 < tol and k > 0:
                 print(f"Tolerance {error_1} reached after {k} iteration.")
                 break
@@ -505,6 +520,8 @@ class SchwarzMethodAlternating(CompositionMethod):
             error_2 = errornorm(u2, u2_prev, "l2")
             u1_prev = u1.copy(deepcopy=True)
             u2_prev = u2.copy(deepcopy=True)
+            k += 1
+        self.last_iteration_count = k + 1
         return u1, u2
 
 

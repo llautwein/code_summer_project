@@ -93,11 +93,42 @@ class GeometryParser:
         output += "};\n"
         return output
 
-    def convert_to_xdmf(self, file_name):
+    def convert_to_xdmf(self, file_name, cell_type="triangle"):
+        # Create the corresponding paths
+        msh_path = f"meshes/{file_name}.msh"
+        xdmf_path = f"meshes/{file_name}.xdmf"
 
-        msh = meshio.read(f"meshes/{file_name}.msh")
-        msh.write(f"meshes/{file_name}.xdmf")
-        print("Converted mesh to XDMF format")
+        # try reading the msh-file
+        try:
+            msh = meshio.read(f"meshes/{file_name}.msh")
+        except Exception as e:
+            print(f"Error reading {msh_path}: {e}")
+            return
+
+        # Filter for the correct cells and save them for writing in the xdmf-file
+        target_meshio_type = 'quad' if cell_type == 'quad' else 'triangle'
+
+        cells_to_write = None
+        for cell_block in msh.cells:
+            if cell_block.type == target_meshio_type:
+                cells_to_write = cell_block
+                break
+
+        if cells_to_write is None:
+            print(f"Error: Could not find cells of type '{target_meshio_type}' in {msh_path}.")
+            return
+
+        out_mesh = meshio.Mesh(
+            points=msh.points,
+            cells=[cells_to_write]
+        )
+        print(f"Converting to {xdmf_path} for '{cells_to_write.type}' cells...")
+        meshio.write(
+            xdmf_path,
+            out_mesh,
+            file_format="xdmf"
+        )
+        print("Successfully converted mesh to xdmf-format")
 
     def load_mesh(self, file_name):
         mesh = fenics.Mesh()
@@ -105,44 +136,52 @@ class GeometryParser:
             xdmf_file.read(mesh)
         return mesh
 
-    def rectangle_mesh(self, left_bottom_corner, length, height, file_name):
-        x0, y0 = left_bottom_corner
-        points = [
-            self.point(x0, y0),
-            self.point(x0 + length, y0),
-            self.point(x0 + length, y0 + height),
-            self.point(x0, y0 + height)
-        ]
-        lines = [
-            self.line(self.points_count - 3, self.points_count - 2),
-            self.line(self.points_count - 2, self.points_count - 1),
-            self.line(self.points_count - 1, self.points_count),
-            self.line(self.points_count, self.points_count - 3)
-        ]
-        loop = self.curve_loop(
-            1, self.line_circs_count)
-        plane_surface = self.plane_surface(self.curve_loop_count)
-        physical_surface = self.physical_surface(self.plane_surface_count)
-        physical_boundary = self.physical_curve(
-            [self.line_circs_count - 3, self.line_circs_count - 2, self.line_circs_count - 1, self.line_circs_count]
-        )
+    def rectangle_mesh(self, left_bottom_corner, length, height, file_name, cell_type="triangle"):
+        self.points_count = 0
+        self.line_circs_count = 0
+        self.curve_loop_count = 0
+        self.plane_surface_count = 0
+        self.physical_surface_count = 0
 
         self.initialize_file(file_name)
         self.define_variables(file_name)
         with open(f"meshes/{file_name}.geo", "a") as file:
-            file.write("\n// Rectangle Geometry\n")
-            for p in points:
-                file.write(p)
-            for l in lines:
-                file.write(l)
-            file.write(loop)
-            file.write(plane_surface)
-            file.write("Mesh 2;\n")
-            file.write(physical_surface)
-            #file.write(physical_boundary)
+            # Specify the points and capture their indices
+            x0, y0 = left_bottom_corner
+            p1_idx = self.points_count + 1; file.write(self.point(x0, y0))
+            p2_idx = self.points_count + 1; file.write(self.point(x0 + length, y0))
+            p3_idx = self.points_count + 1; file.write(self.point(x0 + length, y0 + height))
+            p4_idx = self.points_count + 1; file.write(self.point(x0, y0 + height))
 
-        os.system(f"gmsh meshes/{file_name}.geo -2")
-        self.convert_to_xdmf(file_name)
+            # Specify lines and capture their indices
+            l1_idx = self.line_circs_count + 1; file.write(self.line(p1_idx, p2_idx))  # Bottom
+            l2_idx = self.line_circs_count + 1; file.write(self.line(p2_idx, p3_idx))  # Right
+            l3_idx = self.line_circs_count + 1; file.write(self.line(p3_idx, p4_idx))  # Top
+            l4_idx = self.line_circs_count + 1; file.write(self.line(p4_idx, p1_idx))  # Left
+
+            # Define surface
+            file.write(self.curve_loop(l1_idx, l4_idx))
+            file.write(self.plane_surface(self.curve_loop_count))
+            """
+            # This option doesn't work at the moment because of the quadliteral cell ordering, now using built
+            in meshes instead.
+            if cell_type == 'quad':
+                # Calculate number of divisions
+                nx = max(1, int(round(length / self.lc)))
+                ny = max(1, int(round(height / self.lc)))
+
+                # Add Transfinite and Recombine commands
+                file.write(f"Transfinite Line {{{l1_idx}, {l3_idx}}} = {nx + 1};\n")
+                file.write(f"Transfinite Line {{{l4_idx}, {l2_idx}}} = {ny + 1};\n")
+                file.write(f"Transfinite Surface {{{self.plane_surface_count}}};\n")
+                file.write(f"Recombine Surface {{{self.plane_surface_count}}};\n")
+            """
+
+            file.write("Mesh 2;\n")
+            file.write(self.physical_surface(self.plane_surface_count))
+
+        os.system(f"gmsh meshes/{file_name}.geo -2 -format msh2 -o meshes/{file_name}.msh")
+        self.convert_to_xdmf(file_name, cell_type)
 
     def circle_mesh(self, center, radius, file_name):
         self.initialize_file(file_name)

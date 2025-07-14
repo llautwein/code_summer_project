@@ -1,4 +1,4 @@
-from HelperModules import geometry_parser, visualiser
+from HelperModules import GeometryParser, visualiser
 from dolfin import *
 import FemSolver as fem_solver
 import ProblemDefinition as problem_def
