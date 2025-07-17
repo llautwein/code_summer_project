@@ -9,10 +9,10 @@ visualiser.compare_ddm_methods_plot(method_comparison_results_path)
 """
 
 # Data from the analysis of the algebraic Schwarz method
-algebraic_schwarz_analysis_results_path = "output_files/algebraic_schwarz_analysis.csv"
-# Mesh Size (h), Polynomial Degree, Interface Width, Total DoFs, Time (s), Iterations
-interface_widths = np.logspace(-1, -6, 20)
-fixed_params = {"Mesh Size (h)": [0.004]}
-compare_by = "Polynomial Degree"
+algebraic_schwarz_analysis_results_path = "output_files/algebraic_schwarz_analysis_conforming.csv"
+# Mesh Size (h), Polynomial Degree d, Interface Width, Total DoFs, Time (s), Iterations
+
+fixed_params = {"Polynomial Degree d": [1]}
+compare_by = "Polynomial Degree d"
 visualiser.analyse_algebraic_schwarz_plot(algebraic_schwarz_analysis_results_path,
                                     "Interface Width", "Iterations", fixed_params, compare_by)

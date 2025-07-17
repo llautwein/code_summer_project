@@ -139,13 +139,43 @@ class Visualiser:
                 df_copy = df_copy[mask]
             else:
                 df_copy = df_copy[df_copy[param_name].isin(list_values)]
+        plt.figure()
+        ax = plt.gca()
         sns.lineplot(data=df_copy, x=x_axis, y=y_axis,
-                     hue=compare_by, marker='o')
+                     hue=compare_by, ax=ax, marker='o')
+
+        # Creating the labels manually
+        legend_handles = []
+        legend_labels = []
+        i = 0
+
+        groups = df_copy.groupby(compare_by)
+        palette = sns.color_palette(n_colors=len(groups))
+        for name, group in groups:
+            # Sort the data to ensure the line is drawn correctly
+            group = group.sort_values(by=x_axis)
+
+            # Get the pre-calculated slope from the DataFrame
+            slope = group['Fit Slope'].iloc[0]
+
+            handle_raw, = ax.plot([], [], marker='o', linestyle='-', color=palette[i],
+                                  label=f'Data ({compare_by}={name})')
+            legend_handles.append(handle_raw)
+
+            # Plot the fitted data from the 'Fit Iterations' column
+            handle_fit, = ax.plot(group[x_axis], group["Fit Iterations"],
+                                  linestyle='--',
+                                  label=f'Fit (m≈{slope:.3f})')
+            legend_handles.append(handle_fit)
+            legend_labels.append(f'Iterations for d={name}')
+            legend_labels.append(rf'Fit with $\delta^{{-{slope:.3f}}}$')
+            i+=1
 
         plt.xlabel(x_axis)
         plt.xscale('log')
         plt.ylabel(y_axis)
         plt.yscale('log')
+        plt.legend(handles=legend_handles, labels=legend_labels, title=compare_by)
         plt.show()
 
 

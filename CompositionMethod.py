@@ -1,8 +1,9 @@
 import FemSolver as fem_solver
 from dolfin import *
 import numpy as np
-from scipy.sparse.linalg import gmres, LinearOperator, spsolve, splu
+from scipy.sparse.linalg import gmres, LinearOperator, spsolve, splu, cg
 from scipy.sparse import csc_matrix
+import LinearSystemSolver as lss
 
 
 class CompositionMethod:
@@ -249,9 +250,10 @@ class SchwarzMethodAlgebraic(CompositionMethod):
     interior solvers are pre-factorized for efficiency.
     """
     def __init__(self, V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
-                 V_2, mesh_2, boundary_markers_2, problem_def_2, g_2):
+                 V_2, mesh_2, boundary_markers_2, problem_def_2, g_2, use_lu_decomposition=True):
         super().__init__(V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
                          V_2, mesh_2, boundary_markers_2, problem_def_2, g_2)
+        self.use_lu_decomposition = use_lu_decomposition
 
         # pre computations for domain 1
         self.dofs_1 = self.get_dof_indices(V_1, boundary_markers_1, 1, 2)
@@ -264,8 +266,6 @@ class SchwarzMethodAlgebraic(CompositionMethod):
 
         self.g_1_vec = self.get_bc_values(g_1, V_1, self.dofs_1["physical"])
 
-        self.solver_1 = splu(self.A_1_interior)
-
         # pre computations for domain 2
         self.dofs_2 = self.get_dof_indices(V_2, boundary_markers_2, 1, 2)
         self.A_2, self.f_2 = self.assemble_system(V_2, problem_def_2)
@@ -275,8 +275,12 @@ class SchwarzMethodAlgebraic(CompositionMethod):
         self.A_2_phys2 = self.A_2[self.dofs_2["interior"], :][:, self.dofs_2["physical"]].tocsc()
 
         self.g_2_vec = self.get_bc_values(g_2, V_2, self.dofs_2["physical"])
-
-        self.solver_2 = splu(self.A_2_interior)
+        if self.use_lu_decomposition:
+            print("Computing LU decomposition of interior stiffness matrix (domain 1).")
+            self.solver_1 = splu(self.A_1_interior)
+            print("Computing LU decomposition of interior stiffness matrix (domain 2).")
+            self.solver_2 = splu(self.A_2_interior)
+            print("Decompositions successfully computed.")
 
     @staticmethod
     def assemble_system(V, problem_def):
@@ -354,7 +358,7 @@ class SchwarzMethodAlgebraic(CompositionMethod):
         if domain_idx == 1:
             # Select matrices and vectors for domain 1
             A_interior, A_gamma = self.A_1_interior, self.A_1_gamma1
-            solver = self.solver_1
+            solver = self.solver_1 if self.use_lu_decomposition else None
             A_phys = self.A_1_phys1
             f_interior_full = self.f_1[self.dofs_1["interior"]]
             g_vec_full = self.g_1_vec
@@ -363,7 +367,7 @@ class SchwarzMethodAlgebraic(CompositionMethod):
         elif domain_idx == 2:
             # Select matrices and vectors for domain 2
             A_interior, A_gamma = self.A_2_interior, self.A_2_gamma2
-            solver = self.solver_2
+            solver = self.solver_2 if self.use_lu_decomposition else None
             A_phys = self.A_2_phys2
             f_interior_full = self.f_2[self.dofs_2["interior"]]
             g_vec_full = self.g_2_vec
@@ -381,7 +385,10 @@ class SchwarzMethodAlgebraic(CompositionMethod):
 
         # Solve for the interior degrees of freedom
         rhs = f_bar - A_gamma @ lambda_vec
-        u_interior = solver.solve(rhs)
+        if self.use_lu_decomposition:
+            u_interior = solver.solve(rhs)
+        else:
+            u_interior, _ = cg(A_interior, rhs, rtol=1e-10)
 
         # Reconstruct the full solution
         u_full_func = self.build_dolfin_function_from_dofs(V_source, dofs_source, u_interior,
@@ -416,7 +423,7 @@ class SchwarzMethodAlgebraic(CompositionMethod):
         if domain_idx == 1:
             # Select matrices and vectors for domain 1
             A_interior, A_gamma = self.A_1_interior, self.A_1_gamma1
-            solver = self.solver_1
+            solver = self.solver_1 if self.use_lu_decomposition else None
             A_phys = self.A_1_phys1
             f_interior_full = self.f_1[self.dofs_1["interior"]]
             g_vec = self.g_1_vec
@@ -424,23 +431,25 @@ class SchwarzMethodAlgebraic(CompositionMethod):
         elif domain_idx == 2:
             # Select matrices and vectors for domain 2
             A_interior, A_gamma = self.A_2_interior, self.A_2_gamma2
-            solver = self.solver_2
+            solver = self.solver_2 if self.use_lu_decomposition else None
             A_phys = self.A_2_phys2
             f_interior_full = self.f_2[self.dofs_2["interior"]]
             g_vec = self.g_2_vec
             V, dofs = self.V_2, self.dofs_2
         else:
             raise ValueError("domain_idx must be 1 or 2")
-
         rhs = f_interior_full - A_phys @ g_vec - A_gamma @ lambda_vec
-        u_interior = solver.solve(rhs)
+        if self.use_lu_decomposition:
+            u_interior = solver.solve(rhs)
+        else:
+            u_interior, _ = cg(A_interior, rhs, rtol=1e-10)
 
         # Reconstruct the full solution
         u_func = self.build_dolfin_function_from_dofs(V, dofs, u_interior,
                                                       lambda_vec, g_vec)
         return u_func
 
-    def solve(self, tol, max_iter=100):
+    def solve(self, tol, max_iter=100, use_own_gmres=False):
         # Set up of the right hand side corresponding to the first row
         rhs1 = self.solve_subdomain_and_interpolate(2, np.zeros_like(self.dofs_2["interface"]),
                                                     False, False)
@@ -459,8 +468,12 @@ class SchwarzMethodAlgebraic(CompositionMethod):
             residuals.append(res)
             print(f"GMRES iteration {len(residuals)}, relative residual = {res:.4e}")
 
-        lambda_solution, exit_code = gmres(A_operator, rhs, maxiter=max_iter,
-                                           callback=callback, rtol=tol, restart=1000)
+        if use_own_gmres:
+            own_gmres = lss.GMRESMethod(A_operator, rhs, 1000)
+            lambda_solution, _ = own_gmres.solve(np.zeros_like(rhs), tol, max_iter)
+        else:
+            lambda_solution, exit_code = gmres(A_operator, rhs, maxiter=max_iter,
+                                               callback=callback, rtol=tol, restart=1000)
 
         lambda_1_sol = lambda_solution[:self.n_1]
         u1 = self.construct_final_solution(lambda_1_sol, 1)

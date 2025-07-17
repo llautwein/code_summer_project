@@ -2,16 +2,16 @@ import numpy as np
 
 
 class LinearSystemSolver:
-    def __init__(self, A, b):
-        self.A = A
+    def __init__(self, linear_operator, b):
+        self.linear_operator = linear_operator
         self.b = b
         self.iterates = []
         self.errors = []
-        self.n = A.shape[0]
+        self.n = len(b)
         np.set_printoptions(precision=5)
 
     def print_log(self, k):
-        print(f"Iteration {k}: x_k = {self.iterates[k]}, err = {round(self.errors[k-1], 9)}")
+        print(f"Iteration {k}: err = {round(self.errors[k-1], 9)}")
 
     def solve(self, x_0, tol, max_iter):
         pass
@@ -67,8 +67,8 @@ class GaussSeidelMethod(LinearSystemSolver):
         return self.iterates, self.errors
 
 class GMRESMethod(LinearSystemSolver):
-    def __init__(self, A, b, m):
-        super().__init__(A, b)
+    def __init__(self, linear_operator, b, m):
+        super().__init__(linear_operator, b)
         self.m = m
 
     def arnoldi_iteration(self, r_k):
@@ -77,7 +77,7 @@ class GMRESMethod(LinearSystemSolver):
         Q[:, 0] = r_k / np.linalg.norm(r_k)
         H = np.zeros((self.m+1, self.m))
         for j in range(self.m):
-            v = self.A @ Q[:, j]
+            v = self.linear_operator(Q[:, j])
             for i in range(j):
                 H[i, j] = np.dot(Q[:, i], v)
                 v -= H[i, j] * Q[:, i]
@@ -91,13 +91,13 @@ class GMRESMethod(LinearSystemSolver):
     def solve(self, x_0, tol, max_iter):
         self.iterates.append(x_0)
         x_k = x_0.astype(float).copy()
-        r_k = self.b - self.A @ x_0
+        r_k = self.b - self.linear_operator(x_0)
         self.errors.append(np.linalg.norm(r_k))
         for k in range(max_iter):
             self.print_log(k)
             if self.errors[k] < tol:
                 print("Tolerance reached!")
-                return self.iterates, self.errors
+                return self.iterates[-1], self.errors
             beta = self.errors[k]
             Q, H, m_eff = self.arnoldi_iteration(r_k)
             e1 = np.zeros(m_eff + 1)
@@ -106,9 +106,12 @@ class GMRESMethod(LinearSystemSolver):
             y_sol, _, _, _ = np.linalg.lstsq(H, g, rcond=None)
             x_k += Q[:, :m_eff] @ y_sol
             self.iterates.append(x_k.copy())
-            r_k = self.b - self.A @ x_k
+            r_k = self.b - self.linear_operator(x_k)
             self.errors.append(np.linalg.norm(r_k))
-        return self.iterates, self.errors
+
+        self.print_log(max_iter)
+        print("\nWarning: Maximum number of iterations reached.")
+        return self.iterates[-1], self.errors
 
 
 
