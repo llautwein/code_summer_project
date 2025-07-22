@@ -4,9 +4,9 @@ import ProblemDefinition as problem_def
 import CompositionMethod as cm
 import InterfaceHandler as ih
 
-p0 = Point(0, -0.25)
-length = 1
-height = 2
+p0 = Point(0.25, 0.25)
+length = 0.5
+height = 1
 mid_intersection = 0.75
 delta = 0.01
 
@@ -37,9 +37,10 @@ vs.mesh_plot([mesh_upper, mesh_lower], True)
 
 # Select version of the Schwarz method (alternating, matrix free, algebraic)
 schwarz_algorithm = cm.SchwarzMethodAlgebraic(V_1, mesh_upper, boundary_markers_upper, model_problem, g_1,
-                                              V_2, mesh_lower, boundary_markers_lower, model_problem, g_1, False)
+                                              V_2, mesh_lower, boundary_markers_lower, model_problem, g_1, True)
 u1, u2 = schwarz_algorithm.solve(1e-4, 100)
 print(f"Error of u1: {errornorm(sol_analytic_rec_upper, u1,'L2', mesh=mesh_upper)}")
 print(f"Error of u2: {errornorm(sol_analytic_rec_lower, u2,'L2', mesh=mesh_lower)}")
 vs.heatmap_plot(u1, mesh_upper)
 vs.heatmap_plot(u2, mesh_lower)
+

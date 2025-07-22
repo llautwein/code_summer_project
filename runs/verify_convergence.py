@@ -7,7 +7,7 @@ from HelperModules import visualiser, analyser
 # Shows relationship of the error, the polynomial degree and the size of the elements.
 
 V = FunctionSpace(mesh, "CG", 1)
-u0 = Expression("sin(2*pi*x[0])*cos(2*pi*x[1])", degree=6)
+g = Expression("sin(2*pi*x[0])*cos(2*pi*x[1])", degree=6)
 f = Expression("(8*pi*pi+1)*sin(2*pi*x[0])*cos(2*pi*x[1])", degree=2)
 model_problem = problem_def.ModelProblem(f)
 polynomial_degrees = [1, 2]

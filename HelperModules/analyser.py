@@ -7,27 +7,37 @@ import time
 import pandas as pd
 import numpy as np
 from scipy import stats
+from Config import ConformingMeshAnalysisConfig, IndependentMeshAnalysisConfig
 
 
 class Analyser:
     """
-    Verifies the convergence results for different stepsizes and polynomial degrees.
+    A collection of static methods to run and post-process numerical experiments.
     """
 
     @staticmethod
-    def run_convergence_analysis(problem, u0, polynomial_degrees, step_sizes, u_exact):
+    def run_convergence_analysis(problem, g, polynomial_degrees, element_sizes, u_exact):
+        """
+        Verifies the convergence result for refining finite element sizes from book of Quarteroni.
+        :param problem: The problem to solve.
+        :param g: The boundary condition.
+        :param polynomial_degrees: The polynomial degrees of the Lagrange basis functions.
+        :param element_sizes: A list of sizes for the finite elements.
+        :param u_exact: The analytical solution of the problem.
+        :return: A dictionary containing the convergence results.
+        """
         results = {}
         solver = FemSolver.FemSolver()
         for d in polynomial_degrees:
             errors_L2 = []
             errors_H1 = []
 
-            for h in step_sizes:
+            for h in element_sizes:
                 n = int(round(1 / h))
                 print(f"Degree d={d}, step size h={h}, n={n}")
                 mesh = UnitSquareMesh(n, n)
                 V = FunctionSpace(mesh, "CG", d)
-                bcs = DirichletBC(V, u0, "on_boundary")
+                bcs = DirichletBC(V, g, "on_boundary")
                 u = TrialFunction(V)
                 v = TestFunction(V)
                 a_form = problem.a(u, v)
@@ -38,7 +48,7 @@ class Analyser:
                 errors_L2.append(errornorm(u_exact, u_h, 'L2', mesh=mesh))
                 errors_H1.append(errornorm(u_exact, u_h, 'H1', mesh=mesh))
 
-            results[d] = {'h': step_sizes, 'L2': errors_L2, 'H1': errors_H1}
+            results[d] = {'h': element_sizes, 'L2': errors_L2, 'H1': errors_H1}
         return results
 
     @staticmethod
@@ -147,44 +157,56 @@ class Analyser:
         df = pd.DataFrame(results)
         df.to_csv(results_path, index=False)
 
-    def analyse_algebraic_schwarz_independent(self, left_bottom_corner_lower, overall_height, mid_intersection,
-                                              mesh_resolutions, polynomial_degrees, interface_widths, tol,
-                                              max_iter, problem_1, g_1, problem_2, g_2, results_path):
-        length = 1
+    def analyse_algebraic_schwarz_independent(self, config: IndependentMeshAnalysisConfig):
+        """
+        Investigates the performance in terms of iterations and run time of the algebraic Schwarz method
+        for the given mesh sizes, polynomial degrees and overlap widths.
+        In this case, the meshes are generated independent of each other using either built-in fenics
+        functions or a gmsh approach.
+
+        :param config: A dataclass object containing all experiment parameters.
+        """
         results = []
-        for h in mesh_resolutions:
-            for d in polynomial_degrees:
-                for delta in interface_widths:
+        # Loop through every possible combination
+        for h in config.mesh_resolutions:
+            for d in config.polynomial_degrees:
+                for delta in config.interface_widths:
                     print(f"Running the analysis for h={h}, d={d}, delta={delta}")
+                    # Create the two independent rectangular meshes and define the function spaces
                     geo_parser = gp.GeometryParser()
-                    mesh_rectangle_1, mesh_rectangle_2 = geo_parser.create_independent_meshes(left_bottom_corner_lower,
-                                                                                              mid_intersection,
-                                                                                              length, overall_height,
-                                                                                              delta, h)
-
-                    interface_handler = ih.OverlappingRectanglesInterfaceHandler(mesh_rectangle_1, mesh_rectangle_2)
-
-                    boundary_markers_1, boundary_markers_2 = interface_handler.mark_interface_boundaries(
-                        mid_intersection - delta / 2, mid_intersection + delta / 2)
-                    V_1 = FunctionSpace(mesh_rectangle_1, "CG", d)
-                    V_2 = FunctionSpace(mesh_rectangle_2, "CG", d)
+                    rec_upper, rec_lower = geo_parser.create_independent_meshes(config.left_bottom_corner,
+                                                                                config.length, config.height,
+                                                                                config.mid_intersection, delta, h,
+                                                                                mesh_option=config.mesh_option,
+                                                                                gmsh_parameters=config.gmsh_paramters)
+                    V_1 = FunctionSpace(rec_upper, "CG", d)
+                    V_2 = FunctionSpace(rec_lower, "CG", d)
                     total_dofs = V_1.dim() + V_2.dim()
-
+                    # Mark the physical and artificial part of the boundary
+                    interface_handler = ih.OverlappingRectanglesInterfaceHandler(rec_upper, rec_lower)
+                    boundary_markers_1, boundary_markers_2 = interface_handler.mark_interface_boundaries(
+                        config.mid_intersection - delta / 2,
+                        config.mid_intersection + delta / 2
+                    )
+                    # Set up the algorithm
                     start_setup_time_alg = time.perf_counter()
-                    schwarz_algebraic = cm.SchwarzMethodAlgebraic(V_1, mesh_rectangle_1, boundary_markers_1, problem_1,
-                                                                  g_1,
-                                                                  V_2, mesh_rectangle_2, boundary_markers_2, problem_2,
-                                                                  g_2)
+                    schwarz_algebraic = cm.SchwarzMethodAlgebraic(V_1, rec_upper, boundary_markers_1, config.problem_1,
+                                                                  config.g_1,
+                                                                  V_2, rec_lower, boundary_markers_2, config.problem_2,
+                                                                  config.g_2)
                     end_setup_time_alg = time.perf_counter()
 
+                    # Solve the problem using the algebraic Schwarz method
                     start_solve_time_alg = time.perf_counter()
-                    u1, u2 = schwarz_algebraic.solve(tol, max_iter)
+                    u1, u2 = schwarz_algebraic.solve(config.tol, config.max_iter)
                     end_solve_time_alg = time.perf_counter()
+                    """
+                    # Uncomment to verify that the error is small
                     sol_analytic_rec_1 = interpolate(g_1, V_1)
                     sol_analytic_rec_2 = interpolate(g_1, V_2)
                     print(f"Error of u1: {errornorm(sol_analytic_rec_1, u1, 'L2', mesh=mesh_rectangle_1)}")
                     print(f"Error of u2: {errornorm(sol_analytic_rec_2, u2, 'L2', mesh=mesh_rectangle_2)}")
-
+                    """
                     results.append({
                         'Mesh Size (h)': h,
                         'Polynomial Degree d': d,
@@ -195,50 +217,61 @@ class Analyser:
                         'Iterations': schwarz_algebraic.get_last_iteration_count()
                     })
 
+                # Post-processing of the results
                 df = pd.DataFrame(results)
+                # We expect: iterations ~ C*(1/delta)^m, thus add the x-axis for the fit
                 df['1 / Interface Width'] = 1.0 / df['Interface Width']
 
+                # Perform the fit and add annotated columns ('Fit Iterations', 'Fit Slope')
                 df_final = self.fit_and_annotate_dataframe(
                     df,
                     x_col='1 / Interface Width',
                     y_col='Iterations',
-                    group_by_col='Polynomial Degree d'
+                    group_by_col='Polynomial Degree d' # Group by degree within this subset
                 )
 
-                df_final.to_csv(results_path, index=False)
-                print(f"\nAnalysis complete. Results saved to {results_path}")
+                df_final.to_csv(config.results_path, index=False)
+                print(f"\nAnalysis complete. Results saved to {config.results_path}")
 
-    def analyse_algebraic_schwarz_conforming(self, left_bottom_corner_lower, overall_height, mid_intersection,
-                                             polynomial_degrees, interface_widths, tol,
-                                             max_iter, problem_1, g_1, problem_2, g_2, results_path):
-        length = 1
+    def analyse_algebraic_schwarz_conforming(self, config: ConformingMeshAnalysisConfig):
+        """
+        Investigates the performance in terms of iterations and run time of the algebraic Schwarz method
+        for the given mesh sizes, polynomial degrees and overlap widths.
+        In this case, the one base mesh of the overall domain is used and then divided into the subdomains.
+        In the overlap region, there is one N_overlap layers of finite elements which both subdomains
+        have in common.
+
+        :param config: A dataclass object containing all experiment parameters.
+        """
         results = []
-        for d in polynomial_degrees:
-            for delta in interface_widths:
+        for d in config.polynomial_degrees:
+            for delta in config.interface_widths:
                 print(f"Running the analysis for d={d}, delta={delta}")
                 geo_parser = gp.GeometryParser()
-                mesh_rectangle_1, mesh_rectangle_2 = geo_parser.create_conforming_meshes(left_bottom_corner_lower,
-                                                                                         length, overall_height,
-                                                                                         mid_intersection,
+                mesh_rectangle_1, mesh_rectangle_2 = geo_parser.create_conforming_meshes(config.left_bottom_corner,
+                                                                                         config.length, config.height,
+                                                                                         config.mid_intersection,
                                                                                          delta, N_overlap=1)
 
                 interface_handler = ih.OverlappingRectanglesInterfaceHandler(mesh_rectangle_1, mesh_rectangle_2)
 
                 boundary_markers_1, boundary_markers_2 = interface_handler.mark_interface_boundaries(
-                    mid_intersection - delta / 2, mid_intersection + delta / 2)
+                    config.mid_intersection - delta / 2, config.mid_intersection + delta / 2)
                 V_1 = FunctionSpace(mesh_rectangle_1, "CG", d)
                 V_2 = FunctionSpace(mesh_rectangle_2, "CG", d)
                 total_dofs = V_1.dim() + V_2.dim()
 
                 start_setup_time_alg = time.perf_counter()
-                schwarz_algebraic = cm.SchwarzMethodAlgebraic(V_1, mesh_rectangle_1, boundary_markers_1, problem_1,
-                                                              g_1,
-                                                              V_2, mesh_rectangle_2, boundary_markers_2, problem_2,
-                                                              g_2, False)
+                schwarz_algebraic = cm.SchwarzMethodAlgebraic(V_1, mesh_rectangle_1, boundary_markers_1,
+                                                              config.problem_1,
+                                                              config.g_1,
+                                                              V_2, mesh_rectangle_2, boundary_markers_2,
+                                                              config.problem_2,
+                                                              config.g_2)
                 end_setup_time_alg = time.perf_counter()
 
                 start_solve_time_alg = time.perf_counter()
-                u1, u2 = schwarz_algebraic.solve(tol, max_iter)
+                u1, u2 = schwarz_algebraic.solve(config.tol, config.max_iter)
                 end_solve_time_alg = time.perf_counter()
 
                 results.append({
@@ -260,8 +293,8 @@ class Analyser:
                 group_by_col='Polynomial Degree d'
             )
 
-            df_final.to_csv(results_path, index=False)
-            print(f"\nAnalysis complete. Results saved to {results_path}")
+            df_final.to_csv(config.results_path, index=False)
+            print(f"\nAnalysis complete. Results saved to {config.results_path}")
 
     @staticmethod
     def fit_and_annotate_dataframe(df, x_col, y_col, group_by_col):

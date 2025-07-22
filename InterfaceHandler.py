@@ -41,6 +41,13 @@ class InterfaceHandler:
 
 
 class OverlappingRectanglesInterfaceHandler:
+    """
+    Handles the marking of boundaries for two overlapping rectangular subdomains.
+
+    This class assumes the subdomains are created as two independent meshes.
+    It uses SubDomain classes to identify the physical and artificial interface
+    boundaries based on their y-coordinates.
+    """
     def __init__(self, mesh_upper: Mesh, mesh_lower: Mesh):
         self.mesh_upper = mesh_upper
         self.mesh_lower = mesh_lower

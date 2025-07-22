@@ -1,6 +1,6 @@
 import os
 import meshio
-from dolfin import *
+from dolfin import Point, RectangleMesh, Mesh
 import fenics
 from typing import *
 
@@ -93,6 +93,24 @@ class GeometryParser:
         output += "};\n"
         return output
 
+    def gradual_mesh_option(self, file_name, interface_edge_idx, lc_min, lc_max, dist_min, dist_max):
+        with open(f"meshes/{file_name}.geo", "a") as file:
+            file.write("\n")
+            file.write("Field[1] = Distance;\n")
+            file.write("Field[1].NNodesByEdge = 100;\n")
+            file.write(f"Field[1].EdgesList = {{{interface_edge_idx}}};\n")
+
+            file.write("Field[2] = Threshold;\n")
+            file.write("Field[2].IField = 1;\n")
+            file.write(f"Field[2].LcMin = {lc_min};\n")
+            file.write(f"Field[2].LcMax = {lc_max};\n")
+            file.write(f"Field[2].DistMin = {dist_min};\n")
+            file.write(f"Field[2].DistMax = {dist_max};\n")
+            file.write("Mesh.MeshSizeExtendFromBoundary = 0;")
+            file.write("\n")
+            file.write("Background Field = 2;")
+
+
     def convert_to_xdmf(self, file_name, cell_type="triangle"):
         # Create the corresponding paths
         msh_path = f"meshes/{file_name}.msh"
@@ -122,7 +140,6 @@ class GeometryParser:
             points=msh.points,
             cells=[cells_to_write]
         )
-        print(f"Converting to {xdmf_path} for '{cells_to_write.type}' cells...")
         meshio.write(
             xdmf_path,
             out_mesh,
@@ -136,7 +153,11 @@ class GeometryParser:
             xdmf_file.read(mesh)
         return mesh
 
-    def rectangle_mesh(self, lc, left_bottom_corner, length, height, file_name, cell_type="triangle"):
+    def rectangle_mesh(self, lc, left_bottom_corner, length, height, file_name,
+                       refine_edge=None, refinement_factor=10.0, transition_ratio=0.25):
+        """
+        Generates a rectangular mesh, with an option to refine one edge.
+        """
         self.points_count = 0
         self.line_circs_count = 0
         self.curve_loop_count = 0
@@ -145,43 +166,67 @@ class GeometryParser:
 
         self.initialize_file(file_name)
         self.define_variables(file_name, lc)
+
+        commands = []
+        x0 = left_bottom_corner[0]
+        y0 = left_bottom_corner[1]
+
+        # Points
+        p1_idx, p2_idx, p3_idx, p4_idx = 1, 2, 3, 4
+        commands.append(self.point(x0, y0))
+        commands.append(self.point(x0 + length, y0))
+        commands.append(self.point(x0 + length, y0 + height))
+        commands.append(self.point(x0, y0 + height))
+
+        # Lines (with correct identification)
+        l_bottom_idx = self.line_circs_count + 1; commands.append(self.line(p1_idx, p2_idx))
+        l_right_idx = self.line_circs_count + 1;  commands.append(self.line(p2_idx, p3_idx))
+        l_top_idx = self.line_circs_count + 1; commands.append(self.line(p3_idx, p4_idx))
+        l_left_idx = self.line_circs_count + 1; commands.append(self.line(p4_idx, p1_idx))
+
+        # Surface
+        commands.append(self.curve_loop(l_bottom_idx, l_left_idx))
+        commands.append(self.plane_surface(self.curve_loop_count))
+
+        if refine_edge is not None:
+            edge_map = {'bottom': l_bottom_idx, 'right': l_right_idx, 'top': l_top_idx, 'left': l_left_idx}
+            if refine_edge not in edge_map:
+                raise ValueError(f"Invalid refine_edge. Choose from {list(edge_map.keys())}")
+
+            interface_line_idx = "{" + str(edge_map[refine_edge]) + "}"
+            lc_min = lc / refinement_factor
+            dist_max = min(length, height) * transition_ratio
+
+            num_nodes_on_edge = int(round(length / lc_min))
+
+            commands.append(f"Transfinite Line {{{edge_map[refine_edge]}}} = {num_nodes_on_edge + 1};")
+
+            commands.append("\n// --- Mesh Refinement Fields ---")
+            commands.append("Field[1] = Distance;")
+            commands.append(f"Field[1].EdgesList = {interface_line_idx};")
+            commands.append("Field[2] = Threshold;")
+            commands.append("Field[2].IField = 1;")
+            commands.append(f"Field[2].LcMin = {lc_min};")
+            commands.append(f"Field[2].LcMax = {lc};")
+            commands.append(f"Field[2].DistMin = 0.0;")
+            commands.append(f"Field[2].DistMax = {dist_max};")
+
+            # This is the robust way to combine the field with the boundary lc
+            commands.append("Field[3] = Min;")
+            commands.append("Field[3].FieldsList = {2};")
+            commands.append("Background Field = 3;")
+
+        # 4. Final commands
+        commands.append("Mesh 2;")
+        commands.append(self.physical_surface(self.plane_surface_count))
+
+        # 5. Write all commands to the file at once
         with open(f"meshes/{file_name}.geo", "a") as file:
-            # Specify the points and capture their indices
-            x0, y0 = left_bottom_corner
-            p1_idx = self.points_count + 1; file.write(self.point(x0, y0))
-            p2_idx = self.points_count + 1; file.write(self.point(x0 + length, y0))
-            p3_idx = self.points_count + 1; file.write(self.point(x0 + length, y0 + height))
-            p4_idx = self.points_count + 1; file.write(self.point(x0, y0 + height))
+            file.write("\n".join(commands))
 
-            # Specify lines and capture their indices
-            l1_idx = self.line_circs_count + 1; file.write(self.line(p1_idx, p2_idx))  # Bottom
-            l2_idx = self.line_circs_count + 1; file.write(self.line(p2_idx, p3_idx))  # Right
-            l3_idx = self.line_circs_count + 1; file.write(self.line(p3_idx, p4_idx))  # Top
-            l4_idx = self.line_circs_count + 1; file.write(self.line(p4_idx, p1_idx))  # Left
-
-            # Define surface
-            file.write(self.curve_loop(l1_idx, l4_idx))
-            file.write(self.plane_surface(self.curve_loop_count))
-            """
-            # This option doesn't work at the moment because of the quadliteral cell ordering, now using built
-            in meshes instead.
-            if cell_type == 'quad':
-                # Calculate number of divisions
-                nx = max(1, int(round(length / self.lc)))
-                ny = max(1, int(round(height / self.lc)))
-
-                # Add Transfinite and Recombine commands
-                file.write(f"Transfinite Line {{{l1_idx}, {l3_idx}}} = {nx + 1};\n")
-                file.write(f"Transfinite Line {{{l4_idx}, {l2_idx}}} = {ny + 1};\n")
-                file.write(f"Transfinite Surface {{{self.plane_surface_count}}};\n")
-                file.write(f"Recombine Surface {{{self.plane_surface_count}}};\n")
-            """
-
-            file.write("Mesh 2;\n")
-            file.write(self.physical_surface(self.plane_surface_count))
-
+        # 6. Run Gmsh and Convert
         os.system(f"gmsh meshes/{file_name}.geo -2 -format msh2 -o meshes/{file_name}.msh")
-        self.convert_to_xdmf(file_name, cell_type)
+        self.convert_to_xdmf(file_name)
 
     def circle_mesh(self, lc, center, radius, file_name):
         self.initialize_file(file_name)
@@ -210,7 +255,8 @@ class GeometryParser:
         self.convert_to_xdmf(file_name)
 
     def create_independent_meshes(self, p0: Point, length: float, height: float,
-                                  mid_intersection: float, delta: float, h: float)->Tuple[Mesh, Mesh]:
+                                  mid_intersection: float, delta: float, h: float,
+                                  mesh_option: str="built-in", gmsh_parameters: dict=None)->Tuple[Mesh, Mesh]:
         """
         Creates two independent, rectangular meshes, which overlap in a strip of width delta. In the overlap,
         both meshes will cut through elements of the other mesh respectively.
@@ -225,6 +271,7 @@ class GeometryParser:
         # Calculate the heights of the overlapping rectangles
         height_1 = mid_intersection + delta / 2 - p0[1]
         height_2 = height - height_1 + delta
+
         # Lower rectangle:
         # The point p0_lower is the left bottom corner, p1_lower the right top corner of the lower rectangle.
         p0_lower = Point(p0[0], p0[1])
@@ -235,15 +282,55 @@ class GeometryParser:
         p0_upper = Point(p0[0], mid_intersection - delta / 2)
         p1_upper = Point(p0[0] + length, mid_intersection - delta / 2 + height_2)
 
-        # Define the mesh resolution in the horizontal and vertical directions based on the element size
-        nx = max(1, int(round(length / h)))
-        ny_1 = max(1, int(round(height_1 / h)))
-        ny_2 = max(1, int(round(height_2 / h)))
+        if mesh_option=="built-in":
+            # Define the mesh resolution in the horizontal and vertical directions based on the element size
+            nx = max(1, int(round(length / h)))
+            ny_1 = max(1, int(round(height_1 / h)))
+            ny_2 = max(1, int(round(height_2 / h)))
 
-        # Create meshes directly using FEniCS
-        mesh_rectangle_upper = RectangleMesh(p0_upper, p1_upper, nx, ny_1)
-        mesh_rectangle_lower = RectangleMesh(p0_lower, p1_lower, nx, ny_2)
-        return mesh_rectangle_upper, mesh_rectangle_lower
+            # Create meshes directly using FEniCS
+            rectangle_upper = RectangleMesh(p0_upper, p1_upper, nx, ny_1)
+            rectangle_lower = RectangleMesh(p0_lower, p1_lower, nx, ny_2)
+        elif mesh_option=="gmsh":
+            if gmsh_parameters is None:
+                gmsh_parameters = {}
+
+            refinement_factor = gmsh_parameters.get('refinement_factor', 10.0)
+            transition_ratio = gmsh_parameters.get('transition_ratio', 0.25)
+
+            refine_lower_edge = None
+            refine_upper_edge = None
+            if gmsh_parameters.get('refine_at_interface', False):
+                refine_lower_edge = 'top'
+                refine_upper_edge = 'bottom'
+
+            self.rectangle_mesh(
+                lc=h,
+                left_bottom_corner=p0_lower,
+                length=length,
+                height=height_1,
+                file_name="rectangle_lower",
+                refine_edge=refine_lower_edge,
+                refinement_factor=refinement_factor,
+                transition_ratio=transition_ratio
+            )
+            rectangle_lower = self.load_mesh("rectangle_lower")
+
+            self.rectangle_mesh(
+                lc=h,
+                left_bottom_corner=p0_upper,
+                length=length,
+                height=height_2,
+                file_name="rectangle_upper",
+                refine_edge=refine_upper_edge,
+                refinement_factor=refinement_factor,
+                transition_ratio=transition_ratio
+            )
+            rectangle_upper = self.load_mesh("rectangle_upper")
+        else:
+            raise ValueError(f"Unknown mesh option '{mesh_option}'. Choose 'built-in' or 'gmsh'.")
+
+        return rectangle_upper, rectangle_lower
 
     def create_conforming_meshes(self, p0: Point, length: float, height: float,
                                  mid_intersection: float, delta: float, N_overlap: int=1)->Tuple[Mesh, Mesh]:
@@ -308,5 +395,36 @@ class GeometryParser:
         mesh_upper = SubMesh(global_mesh, UpperSubdomain())
 
         return  mesh_upper, mesh_lower
+
+    def create_circle_rectangle(self, midpoint_circle: Point, radius: float, length: float, height:float,
+                                delta: float, h: float):
+        """
+        Creates a circular and a rectangular mesh which overlap (as given on the cover of Smith, Bjorstad, Gropp)
+        :param p0: Left bottom corner of the rectangle.
+        :param length: Length of the rectangle.
+        :param height: Height of the rectangle.
+        :param midpoint_circle: Midpoint of the circle.
+        :param radius: Radius of the circle.
+        :return: mesh_circle, mesh_rectangle
+        """
+        x0 = midpoint_circle[0] + radius - delta
+        y0 = midpoint_circle[1] - height / 2
+        p0 = Point(x0, y0)
+        p1 = Point(x0 + length, y0 + height)
+        nx = max(1, int(round(length / h)))
+        ny = max(1, int(round(height / h)))
+        mesh_rectangle = RectangleMesh(p0, p1, nx, ny)
+
+        self.circle_mesh(h, midpoint_circle, radius, "mesh_circle")
+        mesh_circle = self.load_mesh("mesh_circle")
+
+        if (delta-radius)**2 + (height/2)**2 > radius**2:
+            print("Warning: corners of the rectangle are not inside the circle.")
+
+        return mesh_circle, mesh_rectangle
+
+
+
+
 
 

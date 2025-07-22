@@ -7,6 +7,11 @@ import LinearSystemSolver as lss
 
 
 class CompositionMethod:
+    """
+    Base class for domain decomposition methods.
+    The class holds common data structures and methods used by different implementations
+    of the Schwarz algorithm.
+    """
     def __init__(self, V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
                  V_2, mesh_2, boundary_markers_2, problem_def_2, g_2):
         self.mesh_1 = mesh_1
@@ -28,24 +33,37 @@ class CompositionMethod:
     @staticmethod
     def get_dof_indices(V, boundary_markers, physical_marker, interface_marker):
         """
-        Function that returns the indices of dofs lying in interior, on the interface boundary, and
-        the physical/true boundary
-        :param V: the function space containing the dofs
+        Partitions the degrees of freedom (DoFs) of a function space into three sets:
+        interior, physical boundary, and interface boundary.
+
+        This is a crucial step for the algebraic method, which operates on blocks
+        of the system matrix corresponding to these DoF sets.
+
+        :param V: The function space containing the dofs
         :param boundary_markers: mesh function which contains the boundary markers
         :param physical_marker: ID of the physical boundary (1)
         :param interface_marker: ID of the interface boundary (2)
-        :return: dict with the needed indices
+        :return: A dictionary containing numpy array with the corresponding indices
         """
+        # Create a dummy BC to easily extract DoFs marked as 'interface'
         bc_interface = DirichletBC(V, Constant(0.0), boundary_markers, interface_marker)
         interface_dofs = np.array(list(bc_interface.get_boundary_values().keys()), dtype=np.int32)
 
+        # Do the same for the physical boundary
         bc_physical = DirichletBC(V, Constant(0.0), boundary_markers, physical_marker)
-        physical_dofs = np.array(list(bc_physical.get_boundary_values().keys()), dtype=np.int32)
-        physical_dofs = np.setdiff1d(physical_dofs, interface_dofs).astype(np.int32)
+        physical_dofs_all = np.array(list(bc_physical.get_boundary_values().keys()), dtype=np.int32)
+
+        # A DoF can't be both physical and interface. The interface takes precedence.
+        # np.setdiff1d removes interface_dofs from the physical_dofs set.
+        physical_dofs = np.setdiff1d(physical_dofs_all, interface_dofs).astype(np.int32)
+
+        # Get all DoFs in the function space
         all_dofs = np.arange(V.dim())
 
+        # Combine the two boundary sets
         boundary_dofs = np.union1d(interface_dofs, physical_dofs).astype(np.int32)
 
+        # Interior DoFs are all DoFs that are not on any boundary
         interior_dofs = np.setdiff1d(all_dofs, boundary_dofs).astype(np.int32)
 
         return {
@@ -53,7 +71,6 @@ class CompositionMethod:
             'interface': interface_dofs,
             'physical': physical_dofs
         }
-
 
     @staticmethod
     def create_bcs(V, boundary_markers, bcs_definitions):
@@ -88,166 +105,19 @@ class CompositionMethod:
         return u
 
     def solve(self, tol, max_iter):
+        """Abstrct solve method which needs to implemented by the child classes."""
         pass
-
-
-class SchwarzMethodMatrixFree(CompositionMethod):
-    """
-    Solves the interface problem without explicitly assembling the stiffness matrix.
-    The PDEs are solved using fenics internal solve, the interface problem is solved with GMRES.
-    """
-    def __init__(self, V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
-                 V_2, mesh_2, boundary_markers_2, problem_def_2, g_2):
-        super().__init__(V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
-                         V_2, mesh_2, boundary_markers_2, problem_def_2, g_2)
-
-        # Identify the degrees of freedom (DoFs) for the interior, physical boundary,
-        # and artificial interface for each subdomain.
-        self.dofs_1 = self.get_dof_indices(V_1, boundary_markers_1, 1, 2)
-        self.dofs_2 = self.get_dof_indices(V_2, boundary_markers_2, 1, 2)
-
-        self.fem_solver = fem_solver.FemSolver()
-
-    @staticmethod
-    def interpolate_on_gamma(u: Function, V: FunctionSpace, dofs):
-        """
-        Helper that evaluates the solution 'u' from one mesh at the DoF coordinates
-        of the interface on the other mesh.
-        :param u: The solution function on one mesh.
-        :param V: The function space corresponding to the other mesh with the artificial boundary
-        :param dofs: The dof indices of the artificial boundary corresponding to V.
-        :return: A vector containing the function values on the artificial boundary.
-        """
-        dof_coords = V.tabulate_dof_coordinates()
-        interpolated_sol = np.zeros(len(dofs))
-        u.set_allow_extrapolation(True)
-        for i in range(len(dofs)):
-            interpolated_sol[i] = u(dof_coords[dofs[i]])
-
-        return interpolated_sol
-
-
-    def solve_subdomain_get_interface_values(self, lambda_vec, domain_idx,
-                                             use_homogeneous_bc=False, use_homogeneous_f=False):
-        """
-        This function solves the PDE on one subdomain and returns the interpolation of this solution
-        on the other subdomain's interface.
-        :param lambda_vec: The given values on the artificial boundary of the subdomain.
-        :param domain_idx: The index of the subdomain (1 or 2) to solve on.
-        :param use_homogeneous_bc: Boolean, if true sets physical boundary condition g=0.
-        :param use_homogeneous_f: Boolean, if true sets the rhs term of the PDE f=0.
-        :return: Interpolation of the solution on the other subdomain's interface.
-        """
-        if domain_idx == 1:
-            V, boundary_markers, problem_def = self.V_1, self.boundary_markers_1, self.problem_def_1
-            # Use original 'g' or a zero constant based on the flag
-            g = self.g_1 if not use_homogeneous_bc else Constant(0.0)
-            f_expr = problem_def.f if not use_homogeneous_f else Constant(0.0)
-            dofs_source, dofs_target = self.dofs_1, self.dofs_2
-            V_target = self.V_2
-        else:
-            V, boundary_markers, problem_def = self.V_2, self.boundary_markers_2, self.problem_def_2
-            # Use original 'g' or a zero constant based on the flag
-            g = self.g_2 if not use_homogeneous_bc else Constant(0.0)
-            f_expr = problem_def.f if not use_homogeneous_f else Constant(0.0)
-            dofs_source, dofs_target = self.dofs_2, self.dofs_1
-            V_target = self.V_1
-
-        # Create a Function on the source interface from the lambda_vec data
-        w = self.vector_to_function(lambda_vec, V, dofs_source["interface"])
-        # Combine boundary data
-        bcs = self.create_bcs(V, boundary_markers, [(g, 1), (w, 2)])
-        # Set up the problem to solve
-        trial, test = TrialFunction(V), TestFunction(V)
-        a_form = problem_def.a(trial, test)
-        L_form = f_expr * test * dx
-        # Solve the PDE on the subdomain
-        u_sol = self.fem_solver.solve(V, a_form, L_form, bcs)
-        # Interpolate the solution on the other subdomain's interface boundary
-        u_sol_on_gamma = self.interpolate_on_gamma(u_sol, V_target, dofs_target["interface"])
-        return u_sol_on_gamma
-
-
-    def apply_operator(self, lambda_full_vec):
-        """
-        Applies the operator P to implement the matrix operator and to compute A lambda = b.
-        :param lambda_full_vec: The vector of unknowns lambda = [lambda_1, lambda_2].
-        :return: The product of the operator matrix with lambda: A*[lambda_1, lambda_2].
-        """
-        n_1 = len(self.dofs_1["interface"])
-        lambda_1 = lambda_full_vec[:n_1]
-        lambda_2 = lambda_full_vec[n_1:]
-
-        P_2 = self.solve_subdomain_get_interface_values(lambda_2, 2,
-                                                        True, True)
-        result_1 = lambda_1 - P_2
-
-        P_1 = self.solve_subdomain_get_interface_values(lambda_1, 1,
-                                      True, True)
-        result_2 = lambda_2 - P_1
-
-        return np.concatenate([result_1, result_2])
-
-    def construct_solution(self, lambda_solution, domain_idx):
-        """
-        After finding the correct interface values (lambda_solution), this function
-        computes the final solution in the specified subdomain.
-        :param lambda_solution: The final interface values on one subdomain.
-        :param domain_idx: The index of the subdomain (1 or 2).
-        :return: The final solution as a fenics function.
-        """
-        if domain_idx == 1:
-            V, boundary_markers, problem_def, g = self.V_1, self.boundary_markers_1, self.problem_def_1, self.g_1
-            dofs_source = self.dofs_1
-        else:
-            V, boundary_markers, problem_def, g = self.V_2, self.boundary_markers_2, self.problem_def_2, self.g_2
-            dofs_source = self.dofs_2
-
-        # Use the final, correct lambda values on the interface
-        w = self.vector_to_function(lambda_solution, V, dofs_source["interface"])
-        # Use the original physical boundary conditions
-        bcs = self.create_bcs(V, boundary_markers, [(g, 1), (w, 2)])
-        # Set up the problem and solve
-        trial, test = TrialFunction(V), TestFunction(V)
-        u_final = self.fem_solver.solve(V, problem_def.a(trial, test), problem_def.L(test), bcs)
-        return u_final
-
-    def solve(self, tol, max_iter=100, restart=20):
-
-        # Compute the rhs of the final system
-        lambda_1_init = np.zeros(len(self.dofs_1["interface"]))
-        lambda_2_init = np.zeros(len(self.dofs_2["interface"]))
-        f_1 = self.solve_subdomain_get_interface_values(np.zeros_like(lambda_2_init), 2)
-        f_2 = self.solve_subdomain_get_interface_values(np.zeros_like(lambda_1_init), 1)
-
-        f = np.concatenate([f_1, f_2])
-
-        size = len(self.dofs_1["interface"]) + len(self.dofs_2["interface"])
-
-        A_operator = LinearOperator((size, size), self.apply_operator)
-
-        residuals = []
-        def callback(res):
-            residuals.append(res)
-            print(f"GMRES Iteration {len(residuals)}, Relative Residual = {res:.4e}")
-
-        lambda_solution, exit_code = gmres(A_operator, f, maxiter=max_iter,
-                                           callback=callback, restart=restart)
-        n_1 = len(self.dofs_1["interface"])
-        lambda_1_sol = lambda_solution[:n_1]
-        lambda_2_sol = lambda_solution[n_1:]
-
-        u_1_final = self.construct_solution(lambda_1_sol, 1)
-        u_2_final = self.construct_solution(lambda_2_sol, 2)
-        self.last_iteration_count = len(residuals) + 1
-        return u_1_final, u_2_final
 
 
 class SchwarzMethodAlgebraic(CompositionMethod):
     """
     Solves the interface problem using an algebraic approach.
-    Subdomain matrices are explicitly assembled as sparse matrices, and
-    interior solvers are pre-factorized for efficiency.
+
+    This method first assembles the full stiffness matrices for each subdomain and
+    saves them using sparse matrix formats (CSC).
+    It then pre-factorizes the interior parts of these matrices using a sparse
+    LU decomposition (splu). The action of the Schwarz operator is then computed
+    efficiently using these pre-factorized solvers and sparse matrix-vector products.
     """
     def __init__(self, V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
                  V_2, mesh_2, boundary_markers_2, problem_def_2, g_2, use_lu_decomposition=True):
@@ -401,13 +271,21 @@ class SchwarzMethodAlgebraic(CompositionMethod):
 
 
     def apply_operator(self, lambda_full_vec):
-
+        """
+        Computes the matrix-vector product of the interface system. This method is then passed to GMRES
+        which only needs to know how to apply the operator and obtain the result.
+        :param lambda_full_vec:
+        :return:
+        """
+        # Unpack the lambda-vector into its components belonging to both subdomains
         lambda_1 = lambda_full_vec[:self.n_1]
         lambda_2 = lambda_full_vec[self.n_1:]
 
+        # Compute u_2^{lambda}, interpolate the result on Gamma_1, and subtract the result from lambda_1
         P_2_lambda = self.solve_subdomain_and_interpolate(2, lambda_2, True, True)
         result_1 = lambda_1 - P_2_lambda
 
+        # Compute u_1^{lambda}, interpolate the result on Gamma_2, and subtract the result from lambda_2
         P_1_lambda = self.solve_subdomain_and_interpolate(1, lambda_1, True, True)
         results_2 = lambda_2 - P_1_lambda
 
@@ -449,7 +327,7 @@ class SchwarzMethodAlgebraic(CompositionMethod):
                                                       lambda_vec, g_vec)
         return u_func
 
-    def solve(self, tol, max_iter=100, use_own_gmres=False):
+    def solve(self, tol, max_iter=1000, use_own_gmres=False):
         # Set up of the right hand side corresponding to the first row
         rhs1 = self.solve_subdomain_and_interpolate(2, np.zeros_like(self.dofs_2["interface"]),
                                                     False, False)
@@ -483,6 +361,157 @@ class SchwarzMethodAlgebraic(CompositionMethod):
 
         return u1, u2
 
+
+class SchwarzMethodMatrixFree(CompositionMethod):
+    """
+    Solves the interface problem without explicitly assembling the stiffness matrix.
+    The PDEs are solved using fenics internal solve, the interface problem is solved with GMRES.
+    """
+    def __init__(self, V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
+                 V_2, mesh_2, boundary_markers_2, problem_def_2, g_2):
+        super().__init__(V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
+                         V_2, mesh_2, boundary_markers_2, problem_def_2, g_2)
+
+        # Identify the degrees of freedom (DoFs) for the interior, physical boundary,
+        # and artificial interface for each subdomain.
+        self.dofs_1 = self.get_dof_indices(V_1, boundary_markers_1, 1, 2)
+        self.dofs_2 = self.get_dof_indices(V_2, boundary_markers_2, 1, 2)
+
+        self.fem_solver = fem_solver.FemSolver()
+
+    @staticmethod
+    def interpolate_on_gamma(u: Function, V: FunctionSpace, dofs):
+        """
+        Helper that evaluates the solution 'u' from one mesh at the DoF coordinates
+        of the interface on the other mesh.
+        :param u: The solution function on one mesh.
+        :param V: The function space corresponding to the other mesh with the artificial boundary
+        :param dofs: The dof indices of the artificial boundary corresponding to V.
+        :return: A vector containing the function values on the artificial boundary.
+        """
+        dof_coords = V.tabulate_dof_coordinates()
+        interpolated_sol = np.zeros(len(dofs))
+        u.set_allow_extrapolation(True)
+        for i in range(len(dofs)):
+            interpolated_sol[i] = u(dof_coords[dofs[i]])
+
+        return interpolated_sol
+
+
+    def solve_subdomain_get_interface_values(self, lambda_vec, domain_idx,
+                                             use_homogeneous_bc=False, use_homogeneous_f=False):
+        """
+        This function solves the PDE on one subdomain and returns the interpolation of this solution
+        on the other subdomain's interface.
+        :param lambda_vec: The given values on the artificial boundary of the subdomain.
+        :param domain_idx: The index of the subdomain (1 or 2) to solve on.
+        :param use_homogeneous_bc: Boolean, if true sets physical boundary condition g=0.
+        :param use_homogeneous_f: Boolean, if true sets the rhs term of the PDE f=0.
+        :return: Interpolation of the solution on the other subdomain's interface.
+        """
+        if domain_idx == 1:
+            V, boundary_markers, problem_def = self.V_1, self.boundary_markers_1, self.problem_def_1
+            # Use original 'g' or a zero constant based on the flag
+            g = self.g_1 if not use_homogeneous_bc else Constant(0.0)
+            f_expr = problem_def.f if not use_homogeneous_f else Constant(0.0)
+            dofs_source, dofs_target = self.dofs_1, self.dofs_2
+            V_target = self.V_2
+        else:
+            V, boundary_markers, problem_def = self.V_2, self.boundary_markers_2, self.problem_def_2
+            # Use original 'g' or a zero constant based on the flag
+            g = self.g_2 if not use_homogeneous_bc else Constant(0.0)
+            f_expr = problem_def.f if not use_homogeneous_f else Constant(0.0)
+            dofs_source, dofs_target = self.dofs_2, self.dofs_1
+            V_target = self.V_1
+
+        # Create a Function on the source interface from the lambda_vec data
+        w = self.vector_to_function(lambda_vec, V, dofs_source["interface"])
+        # Combine boundary data
+        bcs = self.create_bcs(V, boundary_markers, [(g, 1), (w, 2)])
+        # Set up the problem to solve
+        trial, test = TrialFunction(V), TestFunction(V)
+        a_form = problem_def.a(trial, test)
+        L_form = f_expr * test * dx
+        # Solve the PDE on the subdomain
+        u_sol = self.fem_solver.solve(V, a_form, L_form, bcs)
+        # Interpolate the solution on the other subdomain's interface boundary
+        u_sol_on_gamma = self.interpolate_on_gamma(u_sol, V_target, dofs_target["interface"])
+        return u_sol_on_gamma
+
+
+    def apply_operator(self, lambda_full_vec):
+        """
+        Applies the operator P to implement the matrix operator and to compute A lambda = b.
+        :param lambda_full_vec: The vector of unknowns lambda = [lambda_1, lambda_2].
+        :return: The product of the operator matrix with lambda: A*[lambda_1, lambda_2].
+        """
+        n_1 = len(self.dofs_1["interface"])
+        lambda_1 = lambda_full_vec[:n_1]
+        lambda_2 = lambda_full_vec[n_1:]
+
+        P_2 = self.solve_subdomain_get_interface_values(lambda_2, 2,
+                                                        True, True)
+        result_1 = lambda_1 - P_2
+
+        P_1 = self.solve_subdomain_get_interface_values(lambda_1, 1,
+                                      True, True)
+        result_2 = lambda_2 - P_1
+
+        return np.concatenate([result_1, result_2])
+
+    def construct_solution(self, lambda_solution, domain_idx):
+        """
+        After finding the correct interface values (lambda_solution), this function
+        computes the final solution in the specified subdomain.
+        :param lambda_solution: The final interface values on one subdomain.
+        :param domain_idx: The index of the subdomain (1 or 2).
+        :return: The final solution as a fenics function.
+        """
+        if domain_idx == 1:
+            V, boundary_markers, problem_def, g = self.V_1, self.boundary_markers_1, self.problem_def_1, self.g_1
+            dofs_source = self.dofs_1
+        else:
+            V, boundary_markers, problem_def, g = self.V_2, self.boundary_markers_2, self.problem_def_2, self.g_2
+            dofs_source = self.dofs_2
+
+        # Use the final, correct lambda values on the interface
+        w = self.vector_to_function(lambda_solution, V, dofs_source["interface"])
+        # Use the original physical boundary conditions
+        bcs = self.create_bcs(V, boundary_markers, [(g, 1), (w, 2)])
+        # Set up the problem and solve
+        trial, test = TrialFunction(V), TestFunction(V)
+        u_final = self.fem_solver.solve(V, problem_def.a(trial, test), problem_def.L(test), bcs)
+        return u_final
+
+    def solve(self, tol, max_iter=100, restart=20):
+
+        # Compute the rhs of the final system
+        lambda_1_init = np.zeros(len(self.dofs_1["interface"]))
+        lambda_2_init = np.zeros(len(self.dofs_2["interface"]))
+        f_1 = self.solve_subdomain_get_interface_values(np.zeros_like(lambda_2_init), 2)
+        f_2 = self.solve_subdomain_get_interface_values(np.zeros_like(lambda_1_init), 1)
+
+        f = np.concatenate([f_1, f_2])
+
+        size = len(self.dofs_1["interface"]) + len(self.dofs_2["interface"])
+
+        A_operator = LinearOperator((size, size), self.apply_operator)
+
+        residuals = []
+        def callback(res):
+            residuals.append(res)
+            print(f"GMRES Iteration {len(residuals)}, Relative Residual = {res:.4e}")
+
+        lambda_solution, exit_code = gmres(A_operator, f, maxiter=max_iter,
+                                           callback=callback, restart=restart)
+        n_1 = len(self.dofs_1["interface"])
+        lambda_1_sol = lambda_solution[:n_1]
+        lambda_2_sol = lambda_solution[n_1:]
+
+        u_1_final = self.construct_solution(lambda_1_sol, 1)
+        u_2_final = self.construct_solution(lambda_2_sol, 2)
+        self.last_iteration_count = len(residuals) + 1
+        return u_1_final, u_2_final
 
 
 class SchwarzMethodAlternating(CompositionMethod):
