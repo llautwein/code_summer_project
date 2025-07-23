@@ -127,6 +127,9 @@ class SchwarzMethodAlgebraic(CompositionMethod):
 
         # pre computations for domain 1
         self.dofs_1 = self.get_dof_indices(V_1, boundary_markers_1, 1, 2)
+
+        # Get the coordinates to see where the DoFs are
+        dof_coords = V_1.tabulate_dof_coordinates()
         self.n_1 = len(self.dofs_1["interface"])
         self.A_1, self.f_1 = self.assemble_system(V_1, problem_def_1)
 

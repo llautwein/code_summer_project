@@ -4,6 +4,7 @@ from dolfin import Point, Expression
 import ProblemDefinition as problem_def
 import numpy as np
 
+
 @dataclass
 class BaseConfig:
     """
@@ -26,10 +27,12 @@ class ConformingMeshAnalysisConfig(BaseConfig):
     length: float = 1
     height: float = 2
     mid_intersection: float = 0.75
+    mesh_option: str = "gmsh"
+    gmsh_parameters: dict = field(default_factory=lambda: {"lc_coarse": 0.25})
 
     # Analysis lists
     polynomial_degrees: List[int] = field(default_factory=lambda:[1])
-    interface_widths: Union[List[int], np.ndarray] = field(default_factory=lambda:np.logspace(-1, -2.5, 10))
+    interface_widths: Union[List[int], np.ndarray] = field(default_factory=lambda:np.logspace(-1, -4, 15))
 
     # Solver
     use_lu_solver: bool = True
@@ -48,7 +51,7 @@ class IndependentMeshAnalysisConfig(BaseConfig):
     height: float = 2
     mid_intersection: float = 0.75
     mesh_option: str = "gmsh"
-    gmsh_paramters: dict = field(default_factory=lambda: {"refine_at_interface": True,
+    gmsh_parameters: dict = field(default_factory=lambda: {"refine_at_interface": True,
                                                           "refinement_factor": 100.0,
                                                           "transition_ratio": 0.1})
 
@@ -63,5 +66,25 @@ class IndependentMeshAnalysisConfig(BaseConfig):
     # I/O
     results_path: str = "output_files/algebraic_schwarz_analysis_independent.csv"
 
+@dataclass
+class DDMComparisonConfig(BaseConfig):
+    # Geometry
+    left_bottom_corner: Point = field(default_factory=lambda: Point(0, -0.25))
+    length: float = 1
+    height: float = 2
+    mid_intersection: float = 0.75
+    mesh_option: str = "gmsh"
+    gmsh_parameters: dict = field(default_factory=lambda: {"refine_at_interface": False,
+                                                           "refinement_factor": 10.0,
+                                                           "transition_ratio": 0.1})
+    # Analysis lists
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.1])
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-0.5, -2, 10))
+
+    # Solver
+    use_lu_solver: bool = True
+
+    # I/O
+    results_path: str = "output_files/ddm_comparison.csv"
 
 

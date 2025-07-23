@@ -1,8 +1,9 @@
 import os
 import meshio
-from dolfin import Point, RectangleMesh, Mesh
+from dolfin import Point, RectangleMesh, Mesh, MeshFunction, XDMFFile, SubMesh, SubDomain, DOLFIN_EPS
 import fenics
 from typing import *
+import numpy as np
 
 class GeometryParser:
     """
@@ -25,12 +26,12 @@ class GeometryParser:
             file.write("\n")
             file.write(f"lc = {lc};\n")
 
-    def point(self, x, y):
+    def point(self, x, y, lc_str="lc"):
         self.points_count += 1
         output = (
             f"Point({self.points_count}) = "
             "{"
-            f"{x}, {y}, 0, lc"
+            f"{x}, {y}, 0, {lc_str}"
             "};\n"
         )
         return output
@@ -52,6 +53,16 @@ class GeometryParser:
         for i in range(start, end):
             output += f"{i},"
         output += f"{end}"
+        output += "};\n"
+        return output
+
+    def curve_loop_from_list(self, idcs):
+        self.curve_loop_count += 1
+        output = f"Curve Loop({self.curve_loop_count}) = "
+        output += "{"
+        for i in range(len(idcs)-1):
+            output += f"{idcs[i]},"
+        output += f"{idcs[-1]}"
         output += "};\n"
         return output
 
@@ -332,8 +343,11 @@ class GeometryParser:
 
         return rectangle_upper, rectangle_lower
 
+
+
     def create_conforming_meshes(self, p0: Point, length: float, height: float,
-                                 mid_intersection: float, delta: float, N_overlap: int=1)->Tuple[Mesh, Mesh]:
+                                 mid_intersection: float, delta: float, N_overlap: int=1,
+                                 mesh_option: str="built-in", gmsh_parameters: dict=None)->Tuple[Mesh, Mesh]:
         """
         Helper method that creates two rectangular meshes with an interface of width delta and perfectly matching
         nodes within that overlap. The mesh size is computed from the number of element layers within the
@@ -349,6 +363,7 @@ class GeometryParser:
         print(f"Creating conforming meshes with delta={delta:.4f}")
 
         # Define key y-coordinates
+        x0 = p0[0]
         y_bottom = p0[1]
         y_interface_lower = mid_intersection - delta / 2
         y_interface_upper = mid_intersection + delta / 2
@@ -358,41 +373,170 @@ class GeometryParser:
         h_lower_region = y_interface_lower - y_bottom
         h_upper_region = y_top - y_interface_upper
 
-        # Calculate number of cell divisions for each region
         ny_overlap = max(1, N_overlap)
-        uniform_cell_size = delta / ny_overlap
 
-        # Define the mesh resolution in the horizontal and vertical directions based on the element size
-        nx = int(round(length / uniform_cell_size))
-        ny_lower = int(round(h_lower_region / uniform_cell_size))
-        ny_upper = int(round(h_upper_region / uniform_cell_size))
-        ny_total = ny_lower + ny_overlap + ny_upper
+        if mesh_option=="built-in":
+            # Calculate number of cell divisions for each region
+            uniform_cell_size = delta / ny_overlap
 
-        # Adjust the heights slightly in order to fit in the required number of cells.
-        h_lower_actual = ny_lower * uniform_cell_size
-        h_upper_actual = ny_upper * uniform_cell_size
-        y_bottom_actual = y_interface_lower - h_lower_actual
-        y_top_actual = y_interface_upper + h_upper_actual
-        print(f"Original y_bottom: {p0[1]:.4f}, Adjusted y_bottom: {y_bottom_actual:.4f}")
-        print(f"Original y_top: {p0[1] + height:.4f}, Adjusted y_top: {y_top_actual:.4f}")
+            # Define the mesh resolution in the horizontal and vertical directions based on the element size
+            nx = int(round(length / uniform_cell_size))
+            ny_lower = int(round(h_lower_region / uniform_cell_size))
+            ny_upper = int(round(h_upper_region / uniform_cell_size))
+            ny_total = ny_lower + ny_overlap + ny_upper
 
-        # Create the single, global mesh
-        p0_global = Point(p0[0], y_bottom_actual)
-        p1_global = Point(p0[0] + length, y_top_actual)
-        global_mesh = RectangleMesh(p0_global, p1_global, nx, ny_total)
+            # Adjust the heights slightly in order to fit in the required number of cells.
+            h_lower_actual = ny_lower * uniform_cell_size
+            h_upper_actual = ny_upper * uniform_cell_size
+            y_bottom_actual = y_interface_lower - h_lower_actual
+            y_top_actual = y_interface_upper + h_upper_actual
+            print(f"Original y_bottom: {p0[1]:.4f}, Adjusted y_bottom: {y_bottom_actual:.4f}")
+            print(f"Original y_top: {p0[1] + height:.4f}, Adjusted y_top: {y_top_actual:.4f}")
 
-        # Define subdomains based on y-coordinates
-        class LowerSubdomain(SubDomain):
-            def inside(self, x, on_boundary):
-                return x[1] <= y_interface_upper + DOLFIN_EPS
+            # Create the single, global mesh
+            p0_global = Point(p0[0], y_bottom_actual)
+            p1_global = Point(p0[0] + length, y_top_actual)
+            global_mesh = RectangleMesh(p0_global, p1_global, nx, ny_total)
 
-        class UpperSubdomain(SubDomain):
-            def inside(self, x, on_boundary):
-                return x[1] >= y_interface_lower - DOLFIN_EPS
+            # Define subdomains based on y-coordinates
+            class LowerSubdomain(SubDomain):
+                def inside(self, x, on_boundary):
+                    return x[1] <= y_interface_upper + DOLFIN_EPS
 
-        # Extract the submeshes
-        mesh_lower = SubMesh(global_mesh, LowerSubdomain())
-        mesh_upper = SubMesh(global_mesh, UpperSubdomain())
+            class UpperSubdomain(SubDomain):
+                def inside(self, x, on_boundary):
+                    return x[1] >= y_interface_lower - DOLFIN_EPS
+
+            # Extract the submeshes
+            mesh_lower = SubMesh(global_mesh, LowerSubdomain())
+            mesh_upper = SubMesh(global_mesh, UpperSubdomain())
+        elif mesh_option=="gmsh":
+            self.points_count = 0
+            self.line_circs_count = 0
+            self.curve_loop_count = 0
+            self.plane_surface_count = 0
+            self.physical_surface_count = 0
+
+            lc_coarse = gmsh_parameters.get('lc_coarse', 0.1)
+            lc_overlap = delta / N_overlap
+            file_name = "conforming_mesh"
+            self.initialize_file(file_name)
+            self.define_variables(file_name, lc_coarse)
+
+            commands = []
+            commands.append(f"lc_overlap = {lc_overlap};\n")
+            # Define all points
+            commands.append(self.point(x0, y_bottom))
+            commands.append(self.point(x0 + length, y_bottom))
+            commands.append(self.point(x0 + length, y_interface_lower, "lc_overlap"))
+            commands.append(self.point(x0, y_interface_lower, "lc_overlap"))
+            commands.append(self.point(x0, y_interface_upper, "lc_overlap"))
+            commands.append(self.point(x0 + length, y_interface_upper, "lc_overlap"))
+            commands.append(self.point(x0 + length, y_top))
+            commands.append(self.point(x0, y_top))
+
+            # Define all lines
+            commands.append(self.line(1, 2)) # bottom
+            commands.append(self.line(2, 3)) # right lower
+            commands.append(self.line(3, 4)) # interface lower boundary
+            commands.append(self.line(4, 1)) # left lower
+            commands.append(self.line(3, 6)) # right interface
+            commands.append(self.line(4, 5)) # left interface
+            commands.append(self.line(5, 6)) # interface upper boundary
+            commands.append(self.line(6, 7)) # right upper
+            commands.append(self.line(7, 8)) # top
+            commands.append(self.line(8, 5)) # left upper
+
+            # lower rectangle with tag 1
+            commands.append(self.curve_loop_from_list([1, 2, 3, 4]))
+            commands.append(self.plane_surface(self.curve_loop_count))
+            commands.append(self.physical_surface(self.plane_surface_count))
+
+            # upper rectangle with tag 2
+            commands.append(self.curve_loop_from_list([7, 8, 9, 10]))
+            commands.append(self.plane_surface(self.curve_loop_count))
+            commands.append(self.physical_surface(self.plane_surface_count))
+
+            # overlap with tag 3
+            commands.append(self.curve_loop_from_list([-3, 5, -7, -6]))
+            commands.append(self.plane_surface(self.curve_loop_count))
+            commands.append(self.physical_surface(self.plane_surface_count))
+
+            commands.append("Mesh 2;")
+
+            with open(f"meshes/{file_name}.geo", "a") as file:
+                file.write("\n".join(commands))
+
+            os.system(f"gmsh meshes/{file_name}.geo -2 -format msh2 -o meshes/{file_name}.msh")
+
+            # Post-processing of the global mesh to split it into the upper and lower subdomain
+            # First, read the complete mesh file, which has tags 1 (lower), 2 (upper) and 3 (interface)
+            msh_path = f"meshes/{file_name}.msh"
+            print(f"Reading Gmsh output file: {msh_path}")
+            msh = meshio.read(msh_path)
+            target_meshio_type = 'triangle'
+
+            try:
+                # Extract all the cell coordinates and the respective tags
+                cells_all = msh.get_cells_type(target_meshio_type)
+                cell_tags = msh.get_cell_data("gmsh:physical", target_meshio_type)
+            except KeyError:
+                print(f"Error: Could not find cells of type '{target_meshio_type}' in {msh_path}.")
+                return None, None
+
+            # Mesh pruning function
+            def prune_mesh(points_all, cells_subset):
+                """
+                Manual pruning function that takes a full list of mesh coordinates and subset of indices
+                and returns the corresponding submesh coordinates.
+                :param points_all: The full list of mesh coordinates.
+                :param cells_subset: The list of indices of the desired subset of nodes.
+                :return: The pruned mesh description.
+                """
+                # Find the unique vertex indices used by this subset of cells
+                unique_vertex_indices = np.unique(cells_subset.flatten())
+
+                # Create the new, pruned list of points
+                points_pruned = points_all[unique_vertex_indices]
+
+                # Since we now have less points in the mesh, we reindex them:
+                # Create a map from the old, global vertex index to the new, local index
+                old_to_new_map = np.full(points_all.shape[0], -1, dtype=np.int32)
+                old_to_new_map[unique_vertex_indices] = np.arange(len(unique_vertex_indices))
+
+                # Use the map to re-index the cell connectivity array
+                cells_pruned = old_to_new_map[cells_subset]
+
+                return points_pruned, cells_pruned
+
+            # Create the lower subdomain
+            # Create a boolean array (mask) that is 'True' for every cell whose tag is in [1, 3].
+            mask_lower = np.isin(cell_tags, [1, 3])
+            # Use the mask to select the desired cells, then prune the mesh.
+            points_lower, cells_lower = prune_mesh(msh.points, cells_all[mask_lower])
+            # Create a new meshio.Mesh object for the lower subdomain.
+            meshio_lower = meshio.Mesh(points=points_lower, cells={target_meshio_type: cells_lower})
+
+            # Create the upper subdomain
+            # Similar process
+            mask_upper = np.isin(cell_tags, [2, 3])
+            points_upper, cells_upper = prune_mesh(msh.points, cells_all[mask_upper])
+            meshio_upper = meshio.Mesh(points=points_upper, cells={target_meshio_type: cells_upper})
+
+            # Write and Load Final Meshes
+            meshio.write(f"meshes/{file_name}_lower.xdmf", meshio_lower)
+            meshio.write(f"meshes/{file_name}_upper.xdmf", meshio_upper)
+
+            mesh_lower = Mesh()
+            with XDMFFile(f"meshes/{file_name}_lower.xdmf") as infile:
+                infile.read(mesh_lower)
+
+            mesh_upper = Mesh()
+            with XDMFFile(f"meshes/{file_name}_upper.xdmf") as infile:
+                infile.read(mesh_upper)
+
+        else:
+            raise ValueError(f"Unknown mesh option '{mesh_option}'. Choose 'built-in' or 'gmsh'.")
 
         return  mesh_upper, mesh_lower
 

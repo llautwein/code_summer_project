@@ -9,7 +9,7 @@ visualiser.compare_ddm_methods_plot(method_comparison_results_path)
 """
 
 # Data from the analysis of the algebraic Schwarz method
-algebraic_schwarz_analysis_results_path = "output_files/algebraic_schwarz_analysis_independent.csv"
+algebraic_schwarz_analysis_results_path = "output_files/algebraic_schwarz_analysis_conforming.csv"
 # Mesh Size (h), Polynomial Degree d, Interface Width, Total DoFs, Time (s), Iterations
 
 fixed_params = {"Polynomial Degree d": [1]}

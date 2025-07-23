@@ -15,14 +15,19 @@ independent_config = IndependentMeshAnalysisConfig(
     problem_2=model_problem, g_2=g_1
 )
 
-#config = conforming_config
-config = independent_config
+mode = "conforming"
 analyser = analyser.Analyser()
-#analyser.analyse_algebraic_schwarz_conforming(config)
-analyser.analyse_algebraic_schwarz_independent(config)
+if mode=="conforming":
+    config = conforming_config
+    analyser.analyse_algebraic_schwarz_conforming(config)
+elif mode=="independent":
+    config = independent_config
+    analyser.analyse_algebraic_schwarz_independent(config)
+else:
+    raise ValueError("Invalid mode")
 
 visualiser = visualiser.Visualiser()
-fixed_params = {"Polynomial Degree d": [1]}
+fixed_params = {"Polynomial Degree d": config.polynomial_degrees}
 compare_by = "Polynomial Degree d"
 visualiser.analyse_algebraic_schwarz_plot(
     config.results_path,"Interface Width", "Iterations", fixed_params, compare_by
