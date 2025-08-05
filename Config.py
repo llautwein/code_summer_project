@@ -16,23 +16,24 @@ class BaseConfig:
     g_2: Expression
     tol: float = 1e-6
     max_iter: int = 1000
+    # Geometry
+    left_bottom_corner: Point = field(default_factory=lambda: Point(0, -0.25))
+    length: float = 1
+    height: float = 2
+    mid_intersection: float = 0.75
 
 @dataclass
 class ConformingMeshAnalysisConfig(BaseConfig):
     """
     The config for the analysis using conforming meshes in the overlap.
     """
-    # Geometry
-    left_bottom_corner: Point=field(default_factory=lambda:Point(0, -0.25))
-    length: float = 1
-    height: float = 2
-    mid_intersection: float = 0.75
+    # Mesh
     mesh_option: str = "gmsh"
     gmsh_parameters: dict = field(default_factory=lambda: {"lc_coarse": 0.25})
 
     # Analysis lists
     polynomial_degrees: List[int] = field(default_factory=lambda:[1])
-    interface_widths: Union[List[int], np.ndarray] = field(default_factory=lambda:np.logspace(-1, -4, 15))
+    interface_widths: Union[List[int], np.ndarray] = field(default_factory=lambda:np.logspace(-1, -4, 12))
 
     # Solver
     use_lu_solver: bool = True
@@ -45,19 +46,15 @@ class IndependentMeshAnalysisConfig(BaseConfig):
     """
     The config for the analysis using independent meshes.
     """
-    # Geometry
-    left_bottom_corner: Point = field(default_factory=lambda:Point(0, -0.25))
-    length: float = 1
-    height: float = 2
-    mid_intersection: float = 0.75
+    # Mesh
     mesh_option: str = "gmsh"
     gmsh_parameters: dict = field(default_factory=lambda: {"refine_at_interface": True,
-                                                          "refinement_factor": 100.0,
+                                                          "refinement_factor": 150.0,
                                                           "transition_ratio": 0.1})
 
     # Analysis lists
     polynomial_degrees: List[int] = field(default_factory=lambda:[1])
-    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda:np.logspace(-1, -4, 15))
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda:np.logspace(-1, -4, 12))
     mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda:[0.1])
 
     # Solver
@@ -67,13 +64,32 @@ class IndependentMeshAnalysisConfig(BaseConfig):
     results_path: str = "output_files/algebraic_schwarz_analysis_independent.csv"
 
 @dataclass
+class OffsetMeshAnalysisConfig(BaseConfig):
+    """
+    The config for the analysis using offset meshes.
+    """
+    # Mesh
+    gmsh_parameters: dict = field(default_factory=lambda: {"refine_at_interface": True,
+                                                           "refinement_factor": 150.0,
+                                                           "transition_ratio": 0.1})
+
+    # Analysis lists
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.1])
+    polynomial_degrees: List[int] = field(default_factory=lambda: [1])
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.1, 0.01, 0.001])
+    offset_pctg: Union[List[float], np.ndarray] = field(default_factory=lambda: np.linspace(0, 0.9, 50))
+
+    # Solver
+    use_lu_solver: bool = True
+
+    # I/O
+    results_path: str = "output_files/algebraic_schwarz_analysis_offset.csv"
+
+@dataclass
 class DDMComparisonConfig(BaseConfig):
-    # Geometry
-    left_bottom_corner: Point = field(default_factory=lambda: Point(0, -0.25))
-    length: float = 1
-    height: float = 2
-    mid_intersection: float = 0.75
-    mesh_option: str = "gmsh"
+
+    # Mesh
+    mesh_option: str = "built-in"
     gmsh_parameters: dict = field(default_factory=lambda: {"refine_at_interface": False,
                                                            "refinement_factor": 10.0,
                                                            "transition_ratio": 0.1})
@@ -86,5 +102,6 @@ class DDMComparisonConfig(BaseConfig):
 
     # I/O
     results_path: str = "output_files/ddm_comparison.csv"
+
 
 

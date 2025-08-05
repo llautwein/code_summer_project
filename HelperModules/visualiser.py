@@ -128,6 +128,7 @@ class Visualiser:
 
     def analyse_algebraic_schwarz_plot(self, results_path, x_axis, y_axis, fixed_params_dict, compare_by):
         df = pd.read_csv(results_path)
+        print(results_path)
         sns.set_theme(style="whitegrid")
 
         df_copy = df.copy()
@@ -176,6 +177,55 @@ class Visualiser:
         plt.ylabel(y_axis)
         plt.yscale('log')
         plt.legend(handles=legend_handles, labels=legend_labels, title=compare_by)
+        plt.show()
+
+    def iterations_delta_scenarios_plot(self, conforming_csv_path, independent_csv_path, degree=1):
+        try:
+            df_conf = pd.read_csv(conforming_csv_path)
+            df_indep = pd.read_csv(independent_csv_path)
+            df_conf['Scenario'] = 'Conforming'
+            df_indep['Scenario'] = 'Independent'
+            df_plot = pd.concat([df_conf, df_indep], ignore_index=True)
+        except FileNotFoundError as e:
+            print(f"Error: Could not find a results file. {e}")
+            return
+
+        sns.set_theme(style="whitegrid")
+        plt.figure(figsize=(10, 7))
+        ax = plt.gca()  # Get the current axes to plot on
+
+        # Plot the raw data using Seaborn. This will set up colors and the initial legend.
+        sns.lineplot(data=df_plot,
+                     x='Interface Width',
+                     y='Iterations',
+                     style=None,
+                     hue='Scenario',
+                     marker='o',
+                     ax=ax)  # Tell Seaborn to use our axes object
+
+        # --- 4. Loop through scenarios to plot the fit lines ---
+        # Get the color palette that Seaborn just used for the raw data
+        palette = sns.color_palette(n_colors=len(df_plot['Scenario'].unique()))
+
+        for i, (name, group) in enumerate(df_plot.groupby('Scenario')):
+            group = group.sort_values(by='Interface Width')
+
+            slope = group['Fit Slope'].iloc[0]
+
+            ax.plot(group['Interface Width'], group['Fit Iterations'],
+                    linestyle='--',
+                    color=palette[i],
+                    label=rf"Fit for {name} ($\delta^{{{slope:.3f}}}$)")
+
+        plt.xlabel(r"Interface Width ($\delta$)")
+        plt.ylabel("Number of Iterations")
+        plt.xscale('log')
+        plt.yscale('log')
+
+        # Matplotlib will automatically combine the legend from seaborn and our manual plots
+        plt.legend(title='Mesh Scenario')
+
+        plt.grid(True, which="both", ls="--")
         plt.show()
 
 

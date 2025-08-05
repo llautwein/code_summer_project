@@ -7,7 +7,7 @@ import time
 import pandas as pd
 import numpy as np
 from scipy import stats
-from Config import ConformingMeshAnalysisConfig, IndependentMeshAnalysisConfig, DDMComparisonConfig
+from Config import ConformingMeshAnalysisConfig, IndependentMeshAnalysisConfig, OffsetMeshAnalysisConfig, DDMComparisonConfig
 
 
 
@@ -245,13 +245,13 @@ class Analyser:
                 u1, u2 = schwarz_algebraic.solve(config.tol, config.max_iter)
                 end_solve_time_alg = time.perf_counter()
 
-
+                """
                 # Uncomment to verify that the error is small
                 sol_analytic_rec_1 = interpolate(config.g_1, V_1)
                 sol_analytic_rec_2 = interpolate(config.g_1, V_2)
                 print(f"Error of u1: {errornorm(sol_analytic_rec_1, u1, 'L2', mesh=rec_upper)}")
                 print(f"Error of u2: {errornorm(sol_analytic_rec_2, u2, 'L2', mesh=rec_lower)}")
-
+                """
 
                 results.append({
                     'Polynomial Degree d': d,
@@ -274,6 +274,65 @@ class Analyser:
 
         df_final.to_csv(config.results_path, index=False)
         print(f"\nAnalysis complete. Results saved to {config.results_path}")
+
+    def analyse_algebraic_schwarz_offset(self, config: OffsetMeshAnalysisConfig):
+        results = []
+        for h in config.mesh_resolutions:
+            for d in config.polynomial_degrees:
+                for delta_1 in config.interface_widths:
+                    for delta_2_pctg in config.offset_pctg:
+                        print(f"Running the analysis for h={h}, d={d}, delta_1={delta_1}, delta_2_pctg={delta_2_pctg}")
+                        # Create the two independent rectangular meshes and define the function spaces
+                        geo_parser = gp.GeometryParser()
+                        rec_upper, rec_lower = geo_parser.create_offset_meshes(config.left_bottom_corner,
+                                                                               config.length, config.height,
+                                                                               config.mid_intersection, delta_1, delta_2_pctg,
+                                                                               h, gmsh_parameters=config.gmsh_parameters)
+                        V_1 = FunctionSpace(rec_upper, "CG", d)
+                        V_2 = FunctionSpace(rec_lower, "CG", d)
+                        total_dofs = V_1.dim() + V_2.dim()
+                        # Mark the physical and artificial part of the boundary
+                        interface_handler = ih.InterfaceHandler(rec_upper, rec_lower)
+                        boundary_markers_1, boundary_markers_2 = interface_handler.mark_interface_boundaries()
+                        # Set up the algorithm
+                        start_setup_time_alg = time.perf_counter()
+                        schwarz_algebraic = cm.SchwarzMethodAlgebraic(V_1, rec_upper, boundary_markers_1,
+                                                                      config.problem_1,
+                                                                      config.g_1,
+                                                                      V_2, rec_lower, boundary_markers_2,
+                                                                      config.problem_2,
+                                                                      config.g_2,
+                                                                      use_lu_decomposition=config.use_lu_solver)
+                        end_setup_time_alg = time.perf_counter()
+
+                        # Solve the problem using the algebraic Schwarz method
+                        start_solve_time_alg = time.perf_counter()
+                        u1, u2 = schwarz_algebraic.solve(config.tol, config.max_iter)
+                        end_solve_time_alg = time.perf_counter()
+
+                        """
+                        # Uncomment to check correctness of numerical solution
+                        sol_analytic_rec_1 = interpolate(config.g_1, V_1)
+                        sol_analytic_rec_2 = interpolate(config.g_1, V_2)
+                        print(f"Error of u1: {errornorm(sol_analytic_rec_1, u1, 'L2', mesh=rec_upper)}")
+                        print(f"Error of u2: {errornorm(sol_analytic_rec_2, u2, 'L2', mesh=rec_lower)}")
+                        """
+
+                        results.append({
+                            'Polynomial Degree d': d,
+                            'Interface Width': delta_1,
+                            'Offset Percentage': delta_2_pctg,
+                            'Total DoFs': total_dofs,
+                            'Time (s)': (end_setup_time_alg - start_setup_time_alg) + (
+                                    end_solve_time_alg - start_solve_time_alg),
+                            'Iterations': schwarz_algebraic.get_last_iteration_count()
+                        })
+
+        df_final = pd.DataFrame(results)
+
+        df_final.to_csv(config.results_path, index=False)
+        print(f"\nAnalysis complete. Results saved to {config.results_path}")
+
 
     @staticmethod
     def fit_and_annotate_dataframe(df, x_col, y_col, group_by_col):

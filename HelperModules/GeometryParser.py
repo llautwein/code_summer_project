@@ -13,6 +13,8 @@ class GeometryParser:
         self.points_count = 0
         self.line_circs_count = 0
         self.curve_loop_count = 0
+        self.surface_loop_count = 0
+        self.volume_count = 0
         self.physical_curve_count = 0
         self.plane_surface_count = 0
         self.physical_surface_count = 0
@@ -26,12 +28,12 @@ class GeometryParser:
             file.write("\n")
             file.write(f"lc = {lc};\n")
 
-    def point(self, x, y, lc_str="lc"):
+    def point(self, x, y, z=0, lc_str="lc"):
         self.points_count += 1
         output = (
             f"Point({self.points_count}) = "
             "{"
-            f"{x}, {y}, 0, {lc_str}"
+            f"{x}, {y}, {z}, {lc_str}"
             "};\n"
         )
         return output
@@ -54,6 +56,17 @@ class GeometryParser:
             output += f"{i},"
         output += f"{end}"
         output += "};\n"
+        return output
+
+    def surface_loop(self, idcs):
+        self.surface_loop_count += 1
+        ids_str = ", ".join(map(str, idcs))
+        output = f"Surface Loop({self.surface_loop_count}) = {{{ids_str}}};\n"
+        return output
+
+    def volume(self, surface_loop_id):
+        self.volume_count += 1
+        output = f"Volume({self.volume_count}) = {{{surface_loop_id}}};\n"
         return output
 
     def curve_loop_from_list(self, idcs):
@@ -127,36 +140,38 @@ class GeometryParser:
         msh_path = f"meshes/{file_name}.msh"
         xdmf_path = f"meshes/{file_name}.xdmf"
 
-        # try reading the msh-file
         try:
-            msh = meshio.read(f"meshes/{file_name}.msh")
+            msh = meshio.read(msh_path)
         except Exception as e:
             print(f"Error reading {msh_path}: {e}")
             return
 
-        # Filter for the correct cells and save them for writing in the xdmf-file
-        target_meshio_type = 'quad' if cell_type == 'quad' else 'triangle'
-
+        # This is the corrected logic: it now searches for the specified cell_type
         cells_to_write = None
         for cell_block in msh.cells:
-            if cell_block.type == target_meshio_type:
+            if cell_block.type == cell_type:
                 cells_to_write = cell_block
                 break
 
         if cells_to_write is None:
-            print(f"Error: Could not find cells of type '{target_meshio_type}' in {msh_path}.")
+            print(f"Error: Could not find cells of type '{cell_type}' in {msh_path}.")
+            # Helpful tip for the user if it fails
+            print("Available cell types in the file are:", [c.type for c in msh.cells])
             return
 
-        out_mesh = meshio.Mesh(
+        # Prune points that are not used by the selected cells
+        # This is important for 3D meshes to remove unused surface nodes
+        pruned_mesh = meshio.Mesh(
             points=msh.points,
             cells=[cells_to_write]
         )
+
         meshio.write(
             xdmf_path,
-            out_mesh,
+            pruned_mesh,
             file_format="xdmf"
         )
-        print("Successfully converted mesh to xdmf-format")
+        print(f"Successfully converted mesh with '{cell_type}' cells to {xdmf_path}")
 
     def load_mesh(self, file_name):
         mesh = fenics.Mesh()
@@ -222,20 +237,19 @@ class GeometryParser:
             commands.append(f"Field[2].DistMin = 0.0;")
             commands.append(f"Field[2].DistMax = {dist_max};")
 
-            # This is the robust way to combine the field with the boundary lc
             commands.append("Field[3] = Min;")
             commands.append("Field[3].FieldsList = {2};")
             commands.append("Background Field = 3;")
 
-        # 4. Final commands
+        # Final commands
         commands.append("Mesh 2;")
         commands.append(self.physical_surface(self.plane_surface_count))
 
-        # 5. Write all commands to the file at once
+        # Write all commands to the file at once
         with open(f"meshes/{file_name}.geo", "a") as file:
             file.write("\n".join(commands))
 
-        # 6. Run Gmsh and Convert
+        # Run Gmsh and Convert
         os.system(f"gmsh meshes/{file_name}.geo -2 -format msh2 -o meshes/{file_name}.msh")
         self.convert_to_xdmf(file_name)
 
@@ -264,6 +278,61 @@ class GeometryParser:
 
         os.system(f"gmsh meshes/{file_name}.geo -2")
         self.convert_to_xdmf(file_name)
+
+    def cuboid_3d(self, p0: Point, length: float, width: float, height: float, lc: float, file_name: str):
+        self.points_count = 0
+        self.line_circs_count = 0
+        self.curve_loop_count = 0
+        self.plane_surface_count = 0
+        self.surface_loop_count = 0
+        self.volume_count = 0
+        self.initialize_file(file_name)
+        self.define_variables(file_name, lc)
+
+        commands = []
+        x0, y0, z0 = p0
+
+        # Bottom face (z = z0)
+        p1 = self.point(x0, y0, z0)
+        p2 = self.point(x0 + length, y0, z0)
+        p3 = self.point(x0 + length, y0 + width, z0)
+        p4 = self.point(x0, y0 + width, z0)
+        # Top face (z = z0 + height)
+        p5 = self.point(x0, y0, z0 + height)
+        p6 = self.point(x0 + length, y0, z0 + height)
+        p7 = self.point(x0 + length, y0 + width, z0 + height)
+        p8 = self.point(x0, y0 + width, z0 + height)
+        commands.extend([p1, p2, p3, p4, p5, p6, p7, p8])
+
+        # Bottom face
+        l1 = self.line(1, 2); l2 = self.line(2, 3); l3 = self.line(3, 4); l4 = self.line(4, 1)
+        # Top face
+        l5 = self.line(5, 6); l6 = self.line(6, 7); l7 = self.line(7, 8); l8 = self.line(8, 5)
+        # Vertical lines connecting bottom to top
+        l9 = self.line(1, 5); l10 = self.line(2, 6); l11 = self.line(3, 7); l12 = self.line(4, 8)
+        commands.extend([l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12])
+
+        # Bottom (-z), Top (+z), Back (-y), Front (+y), Left (-x), Right (+x)
+        cl1 = self.curve_loop_from_list([1, 2, 3, 4]); s1 = self.plane_surface(self.curve_loop_count)
+        cl2 = self.curve_loop_from_list([5, 6, 7, 8]); s2 = self.plane_surface(self.curve_loop_count)
+        cl3 = self.curve_loop_from_list([1, 10, -5, -9]); s3 = self.plane_surface(self.curve_loop_count)
+        cl4 = self.curve_loop_from_list([3, 12, -7, -11]); s4 = self.plane_surface(self.curve_loop_count)
+        cl5 = self.curve_loop_from_list([4, 9, -8, -12]); s5 = self.plane_surface(self.curve_loop_count)
+        cl6 = self.curve_loop_from_list([2, 11, -6, -10]); s6 = self.plane_surface(self.curve_loop_count)
+        commands.extend([cl1, s1, cl2, s2, cl3, s3, cl4, s4, cl5, s5, cl6, s6])
+
+        sl1 = self.surface_loop([1, 2, 3, 4, 5, 6]); v1 = self.volume(self.surface_loop_count)
+        commands.extend([sl1, v1])
+
+        commands.append("Mesh 3;")
+
+        with open(f"meshes/{file_name}.geo", "a") as f:
+            f.write("\n".join(commands))
+        print(f"Successfully created meshes/{file_name}.geo")
+
+        os.system(f"gmsh meshes/{file_name}.geo -3 -format msh2 -o meshes/{file_name}.msh")
+
+        self.convert_to_xdmf(file_name, cell_type="tetra")
 
     def create_independent_meshes(self, p0: Point, length: float, height: float,
                                   mid_intersection: float, delta: float, h: float,
@@ -350,15 +419,19 @@ class GeometryParser:
                                  mesh_option: str="built-in", gmsh_parameters: dict=None)->Tuple[Mesh, Mesh]:
         """
         Helper method that creates two rectangular meshes with an interface of width delta and perfectly matching
-        nodes within that overlap. The mesh size is computed from the number of element layers within the
-        overlap. When decreasing the overlap, the mesh element size necessarily decrease as well.
-        :param p0: The bottom left corner of the global domain.
-        :param length: Total length of the global domain.
-        :param height: Total height of the global domain.
-        :param mid_intersection: The y-coordinate of the centre of the overlap.
-        :param delta: The width of the overlap.
-        :param N_overlap: The number of element layers within the overlap
-        :return: The mesh of the upper and the lower rectangle.
+        nodes within that overlap. The meshes arer generated either by gmsh with the option to refine the mesh
+        towards the interface, or with built-in meshes where the mesh element size is calculated based on the
+        interface width.
+        :param p0: The left bottom corner of the domain.
+        :param length: The length of the domain.
+        :param height: The overall height of the domain.
+        :param mid_intersection: The y-coordinate of the middle of the interface.
+        :param delta: The interface width.
+        :param N_overlap: The number of element layers within the overlap (default 1)
+        :param mesh_option: Type of meshing logic that is used (either built-in or gmsh).
+        :param gmsh_parameters: Dictionary with further meshing parameters (lc_coarse which sets the element size
+                                in the parts further away from the interface in case of gmsh.
+        :return: The upper and lower rectangle mesh.
         """
         print(f"Creating conforming meshes with delta={delta:.4f}")
 
@@ -567,8 +640,75 @@ class GeometryParser:
 
         return mesh_circle, mesh_rectangle
 
+    def create_offset_meshes(self, p0: Point, length: float, height: float,
+                                 mid_intersection: float, delta_1: float, delta_2_pctg: float,
+                                 h:float, gmsh_parameters: dict=None)->Tuple[Mesh, Mesh]:
+        # Calculate the heights of the overlapping rectangles
+        height_1 = mid_intersection + delta_1 / 2 - p0[1]
+        height_2 = height - height_1 + delta_1
 
+        # Lower rectangle:
+        # The point p0_lower is the left bottom corner of the lower rectangle
+        p0_lower = Point(p0[0], p0[1])
 
+        # Upper rectangle (same principle):
+        # p0_upper is the left bottom corner of the upper rectangle
+        delta_2 = delta_2_pctg * length
+        p0_upper = Point(p0[0] + delta_2, mid_intersection - delta_1 / 2)
+
+        if gmsh_parameters is None:
+            gmsh_parameters = {}
+
+        refinement_factor = gmsh_parameters.get('refinement_factor', 10.0)
+        transition_ratio = gmsh_parameters.get('transition_ratio', 0.25)
+
+        refine_lower_edge = None
+        refine_upper_edge = None
+        if gmsh_parameters.get('refine_at_interface', False):
+            refine_lower_edge = 'top'
+            refine_upper_edge = 'bottom'
+
+        self.rectangle_mesh(
+            lc=h,
+            left_bottom_corner=p0_lower,
+            length=length,
+            height=height_1,
+            file_name="rectangle_lower",
+            refine_edge=refine_lower_edge,
+            refinement_factor=refinement_factor,
+            transition_ratio=transition_ratio
+        )
+        rectangle_lower = self.load_mesh("rectangle_lower")
+
+        self.rectangle_mesh(
+            lc=h,
+            left_bottom_corner=p0_upper,
+            length=length,
+            height=height_2,
+            file_name="rectangle_upper",
+            refine_edge=refine_upper_edge,
+            refinement_factor=refinement_factor,
+            transition_ratio=transition_ratio
+        )
+        rectangle_upper = self.load_mesh("rectangle_upper")
+
+        return rectangle_upper, rectangle_lower
+
+    def create_3d_meshes(self, p0: Point, length: float, width: float, height: float,
+                         mid_intersection: float, delta: float, h: float, gmsh_parameters: dict=None)->Tuple[Mesh, Mesh]:
+        # Calculate the heights of the overlapping rectangles
+        height_1 = mid_intersection + delta / 2 - p0[1]
+        height_2 = height - height_1 + delta
+
+        p0_upper = Point(p0[0], mid_intersection - delta / 2)
+
+        self.cuboid_3d(p0, length, width, height_1, h, "cuboid_lower")
+        cuboid_lower = self.load_mesh("cuboid_lower")
+
+        self.cuboid_3d(p0_upper, length, width, height_2, h, "cuboid_upper")
+        cuboid_upper = self.load_mesh("cuboid_upper")
+
+        return cuboid_upper, cuboid_lower
 
 
 
