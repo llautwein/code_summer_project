@@ -279,7 +279,8 @@ class GeometryParser:
         os.system(f"gmsh meshes/{file_name}.geo -2")
         self.convert_to_xdmf(file_name)
 
-    def cuboid_3d(self, p0: Point, length: float, width: float, height: float, lc: float, file_name: str):
+    def cuboid_3d(self, p0: Point, length: float, width: float, height: float, lc: float, file_name: str,
+                  refine_surface=None, refinement_factor=10.0, transition_ratio=0.25):
         self.points_count = 0
         self.line_circs_count = 0
         self.curve_loop_count = 0
@@ -313,8 +314,11 @@ class GeometryParser:
         commands.extend([l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12])
 
         # Bottom (-z), Top (+z), Back (-y), Front (+y), Left (-x), Right (+x)
+        surface_map = {}
         cl1 = self.curve_loop_from_list([1, 2, 3, 4]); s1 = self.plane_surface(self.curve_loop_count)
+        surface_map['bottom'] = self.plane_surface_count
         cl2 = self.curve_loop_from_list([5, 6, 7, 8]); s2 = self.plane_surface(self.curve_loop_count)
+        surface_map['top'] = self.plane_surface_count
         cl3 = self.curve_loop_from_list([1, 10, -5, -9]); s3 = self.plane_surface(self.curve_loop_count)
         cl4 = self.curve_loop_from_list([3, 12, -7, -11]); s4 = self.plane_surface(self.curve_loop_count)
         cl5 = self.curve_loop_from_list([4, 9, -8, -12]); s5 = self.plane_surface(self.curve_loop_count)
@@ -323,6 +327,29 @@ class GeometryParser:
 
         sl1 = self.surface_loop([1, 2, 3, 4, 5, 6]); v1 = self.volume(self.surface_loop_count)
         commands.extend([sl1, v1])
+
+        if refine_surface is not None:
+            if refine_surface not in surface_map:
+                raise ValueError(f"Invalid refine_edge. Choose from {list(surface_map.keys())}")
+            interface_surface_id = surface_map[refine_surface]
+            lc_fine = lc / refinement_factor
+            dist_max = min(length, width, height) * transition_ratio
+
+            num_nodes_on_edge = int(round(max(length, width) / lc_fine))
+
+            refinement_commands = []
+            refinement_commands.append("// --- Mesh Refinement Fields ---")
+            refinement_commands.append("Field[1] = Distance;")
+            refinement_commands.append(f"Field[1].SurfacesList = {{{interface_surface_id}}};")
+            refinement_commands.append("Field[2] = Threshold;")
+            refinement_commands.append("Field[2].IField = 1;")
+            refinement_commands.append(f"Field[2].LcMin = {lc_fine};")
+            refinement_commands.append(f"Field[2].LcMax = {lc};")
+            refinement_commands.append("Field[2].DistMin = 0.0;")
+            refinement_commands.append(f"Field[2].DistMax = {dist_max};")
+            refinement_commands.append("Background Field = 2;")
+
+            commands.extend(refinement_commands)
 
         commands.append("Mesh 3;")
 
@@ -697,15 +724,31 @@ class GeometryParser:
     def create_3d_meshes(self, p0: Point, length: float, width: float, height: float,
                          mid_intersection: float, delta: float, h: float, gmsh_parameters: dict=None)->Tuple[Mesh, Mesh]:
         # Calculate the heights of the overlapping rectangles
-        height_1 = mid_intersection + delta / 2 - p0[1]
+        height_1 = mid_intersection + delta / 2 - p0[2]
         height_2 = height - height_1 + delta
 
-        p0_upper = Point(p0[0], mid_intersection - delta / 2)
+        p0_upper = Point(p0[0], p0[1], mid_intersection - delta / 2)
 
-        self.cuboid_3d(p0, length, width, height_1, h, "cuboid_lower")
+        if gmsh_parameters is None:
+            gmsh_parameters = {}
+
+        refinement_factor = gmsh_parameters.get('refinement_factor', 10.0)
+        transition_ratio = gmsh_parameters.get('transition_ratio', 0.25)
+
+        refine_lower_surface = None
+        refine_upper_surface = None
+        if gmsh_parameters.get('refine_at_interface', False):
+            refine_lower_surface = 'top'
+            refine_upper_surface = 'bottom'
+
+        self.cuboid_3d(p0, length, width, height_1, h, "cuboid_lower",
+                       refine_surface=refine_lower_surface, refinement_factor=refinement_factor,
+                       transition_ratio=transition_ratio)
         cuboid_lower = self.load_mesh("cuboid_lower")
 
-        self.cuboid_3d(p0_upper, length, width, height_2, h, "cuboid_upper")
+        self.cuboid_3d(p0_upper, length, width, height_2, h, "cuboid_upper",
+                       refine_surface=refine_upper_surface, refinement_factor=refinement_factor,
+                       transition_ratio=transition_ratio)
         cuboid_upper = self.load_mesh("cuboid_upper")
 
         return cuboid_upper, cuboid_lower

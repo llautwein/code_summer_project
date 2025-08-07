@@ -7,7 +7,8 @@ import time
 import pandas as pd
 import numpy as np
 from scipy import stats
-from Config import ConformingMeshAnalysisConfig, IndependentMeshAnalysisConfig, OffsetMeshAnalysisConfig, DDMComparisonConfig
+from Config import (ConformingMeshAnalysisConfig, IndependentMeshAnalysisConfig,
+                    OffsetMeshAnalysisConfig, DDMComparisonConfig, MeshAnalysis3d)
 
 
 
@@ -186,21 +187,21 @@ class Analyser:
                         'Iterations': schwarz_algebraic.get_last_iteration_count()
                     })
 
-                # Post-processing of the results
-                df = pd.DataFrame(results)
-                # We expect: iterations ~ C*(1/delta)^m, thus add the x-axis for the fit
-                df['1 / Interface Width'] = 1.0 / df['Interface Width']
+        # Post-processing of the results
+        df = pd.DataFrame(results)
+        # We expect: iterations ~ C*(1/delta)^m, thus add the x-axis for the fit
+        df['1 / Interface Width'] = 1.0 / df['Interface Width']
 
-                # Perform the fit and add annotated columns ('Fit Iterations', 'Fit Slope')
-                df_final = self.fit_and_annotate_dataframe(
-                    df,
-                    x_col='1 / Interface Width',
-                    y_col='Iterations',
-                    group_by_col='Polynomial Degree d' # Group by degree within this subset
-                )
+        # Perform the fit and add annotated columns ('Fit Iterations', 'Fit Slope')
+        df_final = self.fit_and_annotate_dataframe(
+            df,
+            x_col='1 / Interface Width',
+            y_col='Iterations',
+            group_by_col='Polynomial Degree d' # Group by degree within this subset
+        )
 
-                df_final.to_csv(config.results_path, index=False)
-                print(f"\nAnalysis complete. Results saved to {config.results_path}")
+        df_final.to_csv(config.results_path, index=False)
+        print(f"\nAnalysis complete. Results saved to {config.results_path}")
 
     def analyse_algebraic_schwarz_conforming(self, config: ConformingMeshAnalysisConfig):
         """
@@ -293,7 +294,7 @@ class Analyser:
                         total_dofs = V_1.dim() + V_2.dim()
                         # Mark the physical and artificial part of the boundary
                         interface_handler = ih.InterfaceHandler(rec_upper, rec_lower)
-                        boundary_markers_1, boundary_markers_2 = interface_handler.mark_interface_boundaries()
+                        boundary_markers_1, boundary_markers_2 = interface_handler.mark_interface_boundaries(2)
                         # Set up the algorithm
                         start_setup_time_alg = time.perf_counter()
                         schwarz_algebraic = cm.SchwarzMethodAlgebraic(V_1, rec_upper, boundary_markers_1,
@@ -333,6 +334,74 @@ class Analyser:
         df_final.to_csv(config.results_path, index=False)
         print(f"\nAnalysis complete. Results saved to {config.results_path}")
 
+    def analyse_algebraic_schwarz_3d(self, config: MeshAnalysis3d):
+        results = []
+        # Loop through every possible combination
+        for h in config.mesh_resolutions:
+            for d in config.polynomial_degrees:
+                for delta in config.interface_widths:
+                    print(f"Running the analysis for h={h}, d={d}, delta={delta}")
+                    # Create the two independent rectangular meshes and define the function spaces
+                    geo_parser = gp.GeometryParser()
+                    cuboid_upper, cuboid_lower = geo_parser.create_3d_meshes(config.left_bottom_corner,
+                                                                       config.length, config.width, config.height,
+                                                                       config.mid_intersection, delta, h,
+                                                                       gmsh_parameters=config.gmsh_parameters)
+                    V_1 = FunctionSpace(cuboid_upper, "CG", d)
+                    V_2 = FunctionSpace(cuboid_lower, "CG", d)
+                    total_dofs = V_1.dim() + V_2.dim()
+                    # Mark the physical and artificial part of the boundary
+                    interface_handler = ih.OverlappingRectanglesInterfaceHandler(cuboid_upper, cuboid_lower)
+                    z_interface_of_upper_domain = config.mid_intersection - delta / 2  # Bottom face of upper cuboid
+                    z_interface_of_lower_domain = config.mid_intersection + delta / 2  # Top face of lower cuboid
+                    boundary_markers_1, boundary_markers_2 = interface_handler.mark_interface_boundaries_3d(
+                        z_interface_of_upper_domain,
+                        z_interface_of_lower_domain
+                    )
+                    # Set up the algorithm
+                    start_setup_time_alg = time.perf_counter()
+                    schwarz_algebraic = cm.SchwarzMethodAlgebraic(V_1, cuboid_upper, boundary_markers_1, config.problem_1,
+                                                                  config.g_1,
+                                                                  V_2, cuboid_lower, boundary_markers_2, config.problem_2,
+                                                                  config.g_2, use_lu_decomposition=config.use_lu_solver)
+                    end_setup_time_alg = time.perf_counter()
+
+                    # Solve the problem using the algebraic Schwarz method
+                    start_solve_time_alg = time.perf_counter()
+                    u1, u2 = schwarz_algebraic.solve(config.tol, config.max_iter)
+                    end_solve_time_alg = time.perf_counter()
+                    """
+                    # Uncomment to verify that the error is small
+                    sol_analytic_rec_1 = interpolate(g_1, V_1)
+                    sol_analytic_rec_2 = interpolate(g_1, V_2)
+                    print(f"Error of u1: {errornorm(sol_analytic_rec_1, u1, 'L2', mesh=mesh_rectangle_1)}")
+                    print(f"Error of u2: {errornorm(sol_analytic_rec_2, u2, 'L2', mesh=mesh_rectangle_2)}")
+                    """
+                    results.append({
+                        'Mesh Size (h)': h,
+                        'Polynomial Degree d': d,
+                        'Interface Width': delta,
+                        'Total DoFs': total_dofs,
+                        'Time (s)': (end_setup_time_alg - start_setup_time_alg) + (
+                                end_solve_time_alg - start_solve_time_alg),
+                        'Iterations': schwarz_algebraic.get_last_iteration_count()
+                    })
+
+        # Post-processing of the results
+        df = pd.DataFrame(results)
+        # We expect: iterations ~ C*(1/delta)^m, thus add the x-axis for the fit
+        df['1 / Interface Width'] = 1.0 / df['Interface Width']
+
+        # Perform the fit and add annotated columns ('Fit Iterations', 'Fit Slope')
+        df_final = self.fit_and_annotate_dataframe(
+            df,
+            x_col='1 / Interface Width',
+            y_col='Iterations',
+            group_by_col='Polynomial Degree d'  # Group by degree within this subset
+        )
+
+        df_final.to_csv(config.results_path, index=False)
+        print(f"\nAnalysis complete. Results saved to {config.results_path}")
 
     @staticmethod
     def fit_and_annotate_dataframe(df, x_col, y_col, group_by_col):

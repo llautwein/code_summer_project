@@ -1,21 +1,21 @@
 //parsed geo-file
 
-lc = 0.2;
-Point(1) = {0.0, 0.7, 0.0, lc};
+lc = 0.25;
+Point(1) = {0.0, 0.0, 0.7495, lc};
 
-Point(2) = {1.0, 0.7, 0.0, lc};
+Point(2) = {1.0, 0.0, 0.7495, lc};
 
-Point(3) = {1.0, 1.7, 0.0, lc};
+Point(3) = {1.0, 1.0, 0.7495, lc};
 
-Point(4) = {0.0, 1.7, 0.0, lc};
+Point(4) = {0.0, 1.0, 0.7495, lc};
 
-Point(5) = {0.0, 0.7, 1.05, lc};
+Point(5) = {0.0, 0.0, 1.75, lc};
 
-Point(6) = {1.0, 0.7, 1.05, lc};
+Point(6) = {1.0, 0.0, 1.75, lc};
 
-Point(7) = {1.0, 1.7, 1.05, lc};
+Point(7) = {1.0, 1.0, 1.75, lc};
 
-Point(8) = {0.0, 1.7, 1.05, lc};
+Point(8) = {0.0, 1.0, 1.75, lc};
 
 Line(1) = {1, 2};
 
@@ -69,4 +69,14 @@ Surface Loop(1) = {1, 2, 3, 4, 5, 6};
 
 Volume(1) = {1};
 
+// --- Mesh Refinement Fields ---
+Field[1] = Distance;
+Field[1].SurfacesList = {1};
+Field[2] = Threshold;
+Field[2].IField = 1;
+Field[2].LcMin = 0.0033333333333333335;
+Field[2].LcMax = 0.25;
+Field[2].DistMin = 0.0;
+Field[2].DistMax = 0.1;
+Background Field = 2;
 Mesh 3;

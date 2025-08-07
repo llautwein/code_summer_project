@@ -54,7 +54,7 @@ class IndependentMeshAnalysisConfig(BaseConfig):
 
     # Analysis lists
     polynomial_degrees: List[int] = field(default_factory=lambda:[1])
-    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda:np.logspace(-1, -4, 12))
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda:np.logspace(-1, -3, 8))
     mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda:[0.1])
 
     # Solver
@@ -76,14 +76,40 @@ class OffsetMeshAnalysisConfig(BaseConfig):
     # Analysis lists
     mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.1])
     polynomial_degrees: List[int] = field(default_factory=lambda: [1])
-    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.1, 0.01, 0.001])
-    offset_pctg: Union[List[float], np.ndarray] = field(default_factory=lambda: np.linspace(0, 0.9, 50))
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -4, 12))
+    offset_pctg: Union[List[float], np.ndarray] = field(default_factory=lambda: np.linspace(0, 0.9, 10))
 
     # Solver
     use_lu_solver: bool = True
 
     # I/O
     results_path: str = "output_files/algebraic_schwarz_analysis_offset.csv"
+
+@dataclass
+class MeshAnalysis3d(BaseConfig):
+    """
+    The config for the analysis using independent meshes.
+    """
+    # Mesh
+    left_bottom_corner: Point = field(default_factory=lambda: Point(0, 0, -0.25))
+    length: float = 1
+    width: float = 1
+    height: float = 2
+    mid_intersection: float = 0.75
+    gmsh_parameters: dict = field(default_factory=lambda: {"refine_at_interface": True,
+                                                           "refinement_factor": 75.0,
+                                                           "transition_ratio": 0.1})
+
+    # Analysis lists
+    polynomial_degrees: List[int] = field(default_factory=lambda: [1])
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -3, 8))
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.25])
+
+    # Solver
+    use_lu_solver: bool = True
+
+    # I/O
+    results_path: str = "output_files/algebraic_schwarz_analysis_3d.csv"
 
 @dataclass
 class DDMComparisonConfig(BaseConfig):

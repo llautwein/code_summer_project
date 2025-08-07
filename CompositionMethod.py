@@ -120,7 +120,8 @@ class SchwarzMethodAlgebraic(CompositionMethod):
     efficiently using these pre-factorized solvers and sparse matrix-vector products.
     """
     def __init__(self, V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
-                 V_2, mesh_2, boundary_markers_2, problem_def_2, g_2, use_lu_decomposition=True):
+                 V_2, mesh_2, boundary_markers_2, problem_def_2, g_2, use_lu_decomposition=True,
+                 interface_z_coords = None):
         super().__init__(V_1, mesh_1, boundary_markers_1, problem_def_1, g_1,
                          V_2, mesh_2, boundary_markers_2, problem_def_2, g_2)
         self.use_lu_decomposition = use_lu_decomposition
@@ -128,8 +129,28 @@ class SchwarzMethodAlgebraic(CompositionMethod):
         # pre computations for domain 1
         self.dofs_1 = self.get_dof_indices(V_1, boundary_markers_1, 1, 2)
 
-        # Get the coordinates to see where the DoFs are
-        dof_coords = V_1.tabulate_dof_coordinates()
+        print("\n--- Verifying DoF partitioning for Domain 1 (Upper) ---")
+        print(f"Total DoFs: {V_1.dim()}")
+        print(f"  > Interior DoFs:      {len(self.dofs_1['interior'])}")
+        print(f"  > Physical Bdy DoFs:  {len(self.dofs_1['physical'])}")
+        print(f"  > Interface DoFs:     {len(self.dofs_1['interface'])}")
+        assert len(self.dofs_1['interface']) > 0, "ERROR: No interface DoFs found for Domain 1!"
+
+        dof_coords_1 = V_1.tabulate_dof_coordinates()
+
+        if interface_z_coords is not None:
+            z_upper_interface = interface_z_coords[0]
+            interface_dofs_coords_1 = dof_coords_1[self.dofs_1['interface']]
+            z_coords_on_interface_1 = interface_dofs_coords_1[:, 2]
+
+            # Check if all z-coordinates are close to the expected value
+            if not np.all(np.isclose(z_coords_on_interface_1, z_upper_interface)):
+                print("WARNING: Some interface DoFs in Domain 1 are NOT at the correct z-coordinate!")
+                print(f"Expected z = {z_upper_interface}, but found values like: {np.unique(z_coords_on_interface_1)}")
+            else:
+                print("  > Verification successful: All interface DoF coordinates for Domain 1 are correct.")
+
+
         self.n_1 = len(self.dofs_1["interface"])
         self.A_1, self.f_1 = self.assemble_system(V_1, problem_def_1)
 
@@ -141,6 +162,26 @@ class SchwarzMethodAlgebraic(CompositionMethod):
 
         # pre computations for domain 2
         self.dofs_2 = self.get_dof_indices(V_2, boundary_markers_2, 1, 2)
+
+        print("\n--- Verifying DoF partitioning for Domain 2 (Lower) ---")
+        print(f"Total DoFs: {V_2.dim()}")
+        print(f"  > Interior DoFs:      {len(self.dofs_2['interior'])}")
+        print(f"  > Physical Bdy DoFs:  {len(self.dofs_2['physical'])}")
+        print(f"  > Interface DoFs:     {len(self.dofs_2['interface'])}")
+        assert len(self.dofs_2['interface']) > 0, "ERROR: No interface DoFs found for Domain 2!"
+
+        dof_coords_2 = V_2.tabulate_dof_coordinates()
+        if interface_z_coords is not None:
+            z_lower_interface = interface_z_coords[1]
+            interface_dofs_coords_2 = dof_coords_2[self.dofs_2['interface']]
+            z_coords_on_interface_2 = interface_dofs_coords_2[:, 2]
+
+            if not np.all(np.isclose(z_coords_on_interface_2, z_lower_interface)):
+                print("WARNING: Some interface DoFs in Domain 2 are NOT at the correct z-coordinate!")
+                print(f"Expected z = {z_lower_interface}, but found values like: {np.unique(z_coords_on_interface_2)}")
+            else:
+                print("  > Verification successful: All interface DoF coordinates for Domain 2 are correct.")
+
         self.A_2, self.f_2 = self.assemble_system(V_2, problem_def_2)
 
         self.A_2_interior = self.A_2[self.dofs_2["interior"], :][:, self.dofs_2["interior"]].tocsc()

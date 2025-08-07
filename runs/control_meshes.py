@@ -7,7 +7,7 @@ import CompositionMethod as cm
 from dolfin import *
 import fenics
 
-p0 = Point(0, -0.25)
+p0 = Point(0, 0, -0.25)
 length = 1
 height = 2
 width = 1
@@ -21,27 +21,33 @@ gmsh_parameters = {"refine_at_interface": True,
                     "transition_ratio": 0.1}
 visualiser = vis.Visualiser()
 geo_parser = gp.GeometryParser()
-cuboid_upper, cuboid_lower = geo_parser.create_3d_meshes(p0, length, width, height, mid_intersection, delta, h)
+cuboid_upper, cuboid_lower = geo_parser.create_3d_meshes(p0, length, width, height, mid_intersection, delta, h,
+                                                         gmsh_parameters=gmsh_parameters)
 
 interface_handler = ih.OverlappingRectanglesInterfaceHandler(cuboid_upper, cuboid_lower)
-y_interface_of_upper_domain = mid_intersection - delta / 2
-y_interface_of_lower_domain = mid_intersection + delta / 2
-bm_1, bm_2 = interface_handler.mark_interface_boundaries_3d(y_interface_of_upper_domain, y_interface_of_lower_domain)
-File("output_files/boundary_markers.pvd") << bm_1
+z_interface_of_upper_domain = mid_intersection - delta / 2  # Bottom face of upper cuboid
+z_interface_of_lower_domain = mid_intersection + delta / 2  # Top face of lower cuboid
 
+bm_1, bm_2 = interface_handler.mark_interface_boundaries_3d(
+    z_interface_of_upper_domain,
+    z_interface_of_lower_domain
+)
+File("output_files/boundary_markers.pvd") << bm_1
 V_1 = FunctionSpace(cuboid_upper, "CG", 1)
 V_2 = FunctionSpace(cuboid_lower, "CG", 1)
-g_1 = Expression("sin(2*pi*x[0])*cos(2*pi*x[1])*sin(2*pi*x[2])", degree=6)
-f_1 = Expression("(12*pi*pi+1)*sin(2*pi*x[0])*cos(2*pi*x[1])*sin(2*pi*x[2])", degree=2)
+g_1 = Expression("sin(2*pi*x[0])*cos(2*pi*x[1])*cos(2*pi*x[2])", degree=6)
+f_1 = Expression("(12*pi*pi+1)*sin(2*pi*x[0])*cos(2*pi*x[1])*cos(2*pi*x[2])", degree=2)
 sol_analytic_rec_upper = interpolate(g_1, V_1)
 sol_analytic_rec_lower = interpolate(g_1, V_2)
 
 model_problem = problem_def.ModelProblem(f_1)
-schwarz_algorithm = cm.SchwarzMethodMatrixFree(V_1, cuboid_upper, bm_1, model_problem, g_1,
-                                                V_2, cuboid_lower, bm_2, model_problem, g_1)
-u1, u2 = schwarz_algorithm.solve(1e-4, 100)
+schwarz_algorithm = cm.SchwarzMethodAlgebraic(V_1, cuboid_upper, bm_1, model_problem, g_1,
+                                              V_2, cuboid_lower, bm_2, model_problem, g_1,
+                                              interface_z_coords=(z_interface_of_upper_domain,z_interface_of_lower_domain))
+u1, u2 = schwarz_algorithm.solve(1e-6, 100)
 print(f"Error of u1: {errornorm(sol_analytic_rec_upper, u1,'L2', mesh=cuboid_upper)}")
 print(f"Error of u2: {errornorm(sol_analytic_rec_lower, u2,'L2', mesh=cuboid_lower)}")
+
 """
 visualiser.mesh_plot([rec_upper, rec_lower])
 visualiser.mesh_plot([rec_upper])
