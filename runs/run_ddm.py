@@ -8,18 +8,18 @@ p0 = Point(0.25, 0.25)
 length = 0.5
 height = 1
 mid_intersection = 0.75
-delta = 0.01
+delta = 0.1
+gmsh_parameters = {"refine_at_interface": True,
+                   "refinement_factor": 10,
+                   "transition_ratio": 0.1}
 
 geo_parser = GeometryParser.GeometryParser()
-mesh_upper, mesh_lower = geo_parser.create_conforming_meshes(p0, length, height, mid_intersection, delta, N_overlap=1)
+mesh_upper, mesh_lower = geo_parser.create_offset_meshes(p0, length, height, mid_intersection, delta, 0.5, 0.1, gmsh_parameters=gmsh_parameters)
 
-interface_handler = ih.OverlappingRectanglesInterfaceHandler(mesh_upper, mesh_lower)
+interface_handler = ih.InterfaceHandler(mesh_upper, mesh_lower)
 y_interface_of_upper_domain = mid_intersection - delta / 2
 y_interface_of_lower_domain = mid_intersection + delta / 2
-boundary_markers_upper, boundary_markers_lower = interface_handler.mark_interface_boundaries(
-    y_interface_of_upper_domain,
-    y_interface_of_lower_domain
-)
+boundary_markers_upper, boundary_markers_lower = interface_handler.mark_interface_boundaries(2)
 
 File("output_files/boundary_markers.pvd") << boundary_markers_upper
 

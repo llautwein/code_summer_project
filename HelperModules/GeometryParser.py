@@ -528,10 +528,10 @@ class GeometryParser:
             # Define all points
             commands.append(self.point(x0, y_bottom))
             commands.append(self.point(x0 + length, y_bottom))
-            commands.append(self.point(x0 + length, y_interface_lower, "lc_overlap"))
-            commands.append(self.point(x0, y_interface_lower, "lc_overlap"))
-            commands.append(self.point(x0, y_interface_upper, "lc_overlap"))
-            commands.append(self.point(x0 + length, y_interface_upper, "lc_overlap"))
+            commands.append(self.point(x0 + length, y_interface_lower, lc_str="lc_overlap"))
+            commands.append(self.point(x0, y_interface_lower, lc_str="lc_overlap"))
+            commands.append(self.point(x0, y_interface_upper, lc_str="lc_overlap"))
+            commands.append(self.point(x0 + length, y_interface_upper, lc_str="lc_overlap"))
             commands.append(self.point(x0 + length, y_top))
             commands.append(self.point(x0, y_top))
 

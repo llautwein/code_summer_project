@@ -132,6 +132,7 @@ class Visualiser:
         sns.set_theme(style="whitegrid")
 
         df_copy = df.copy()
+        # Filter the specified subset of the data to plot
         for param_name, list_values in fixed_params_dict.items():
             if pd.api.types.is_float_dtype(df_copy[param_name]):
                 mask = pd.Series(False, index=df_copy.index)
@@ -142,6 +143,7 @@ class Visualiser:
                 df_copy = df_copy[df_copy[param_name].isin(list_values)]
         plt.figure()
         ax = plt.gca()
+        # plot the raw data
         sns.lineplot(data=df_copy, x=x_axis, y=y_axis,
                      hue=compare_by, ax=ax, marker='o')
 
@@ -149,7 +151,7 @@ class Visualiser:
         legend_handles = []
         legend_labels = []
         i = 0
-
+        # Plot the fitted data and create custom legend
         groups = df_copy.groupby(compare_by)
         palette = sns.color_palette(n_colors=len(groups))
         for name, group in groups:
@@ -166,7 +168,7 @@ class Visualiser:
             # Plot the fitted data from the 'Fit Iterations' column
             handle_fit, = ax.plot(group[x_axis], group["Fit Iterations"],
                                   linestyle='--',
-                                  label=f'Fit (m≈{slope:.3f})')
+                                  label=f'Fit (m≈{slope:.3f})', color=palette[i])
             legend_handles.append(handle_fit)
             legend_labels.append(f'Iterations for d={name}')
             legend_labels.append(rf'Fit with $\delta^{{-{slope:.3f}}}$')
@@ -179,35 +181,60 @@ class Visualiser:
         plt.legend(handles=legend_handles, labels=legend_labels, title=compare_by)
         plt.show()
 
-    def iterations_delta_scenarios_plot(self, conforming_csv_path, independent_csv_path, degree=1):
-        try:
-            df_conf = pd.read_csv(conforming_csv_path)
-            df_indep = pd.read_csv(independent_csv_path)
-            df_conf['Scenario'] = 'Conforming'
-            df_indep['Scenario'] = 'Independent'
-            df_plot = pd.concat([df_conf, df_indep], ignore_index=True)
-        except FileNotFoundError as e:
-            print(f"Error: Could not find a results file. {e}")
+    def iterations_delta_scenarios_plot(self, scenarios: dict, x_axis: str, y_axis: str, fixed_params:dict):
+        """
+        Compares multiple experimental mesh scenarios by creating a plot from different csv files.
+        :param scenarios: A dictionary of mesh scenarios.
+        :param x_axis: Column name of the x-axis.
+        :param y_axis: Column name of the y-axis.
+        :param fixed_params: Dictionary of fixed parameters.
+        """
+        all_dfs = []
+        for name, path in scenarios.items():
+            try:
+                df = pd.read_csv(path)
+                df['Scenario'] = name
+                all_dfs.append(df)
+            except FileNotFoundError as e:
+                print(f"Error: Could not find a results file. {e}")
+                return
+
+        df_filtered = pd.concat(all_dfs, ignore_index=True)
+
+        for param, value in fixed_params.items():
+            if pd.api.types.is_float_dtype(df_filtered[param]):
+                mask = pd.Series(False, index=df_filtered.index)
+                for v in value:
+                    mask |= np.isclose(df_filtered[param], v)
+                df_filtered = df_filtered[mask]
+            else:
+                df_filtered = df_filtered[df_filtered[param].isin(value)]
+
+        if df_filtered.empty:
+            print("Warning: No data matches the specified fixed parameters. Nothing to plot.")
             return
 
-        sns.set_theme(style="whitegrid")
+        sns.set_theme(style="whitegrid", context="talk")
         plt.figure(figsize=(10, 7))
         ax = plt.gca()  # Get the current axes to plot on
 
-        # Plot the raw data using Seaborn. This will set up colors and the initial legend.
-        sns.lineplot(data=df_plot,
-                     x='Interface Width',
-                     y='Iterations',
-                     style=None,
-                     hue='Scenario',
-                     marker='o',
-                     ax=ax)  # Tell Seaborn to use our axes object
-
-        # --- 4. Loop through scenarios to plot the fit lines ---
         # Get the color palette that Seaborn just used for the raw data
-        palette = sns.color_palette(n_colors=len(df_plot['Scenario'].unique()))
+        palette = sns.color_palette(n_colors=len(df_filtered['Scenario'].unique()))
 
-        for i, (name, group) in enumerate(df_plot.groupby('Scenario')):
+        # Plot the raw data using Seaborn. This will set up colors and the initial legend.
+        ax = sns.lineplot(
+            data=df_filtered,
+            x=x_axis,
+            y=y_axis,
+            style="Scenario",
+            hue='Scenario',
+            marker='o',
+            legend="full",
+            palette=palette,
+            ax=ax
+        )
+
+        for i, (name, group) in enumerate(df_filtered.groupby(['Scenario', "Polynomial Degree d"])):
             group = group.sort_values(by='Interface Width')
 
             slope = group['Fit Slope'].iloc[0]
@@ -215,18 +242,97 @@ class Visualiser:
             ax.plot(group['Interface Width'], group['Fit Iterations'],
                     linestyle='--',
                     color=palette[i],
-                    label=rf"Fit for {name} ($\delta^{{{slope:.3f}}}$)")
+                    label=rf"Fit for {name} ($\delta^{{{-slope:.3f}}}$)")
 
         plt.xlabel(r"Interface Width ($\delta$)")
         plt.ylabel("Number of Iterations")
         plt.xscale('log')
         plt.yscale('log')
 
-        # Matplotlib will automatically combine the legend from seaborn and our manual plots
         plt.legend(title='Mesh Scenario')
 
         plt.grid(True, which="both", ls="--")
         plt.show()
+
+    @staticmethod
+    def plot_parameter_study(results_path: str, x_axis: str, y_axis: str, hue: str,
+                             fixed_params: dict=None, plot_fit: bool=False, x_log: bool=False, y_log: bool=False,
+                             save_fig: bool=False, fig_name: str="results_fig", dpi: int=500)->None:
+        """
+        Creates a flexible lineplot of the provided data.
+        :param results_path: Path to the csv results file.
+        :param x_axis: Column name of the x-axis.
+        :param y_axis: Column name of the y-axis.
+        :param hue: Column to use for colouring the lines.
+        :param fixed_params: A dictionary of fixed parameters.
+        :param plot_fit: If True, plots the fitted line from the csv (delta^(-m))
+        """
+        try:
+            df = pd.read_csv(results_path)
+        except FileNotFoundError:
+            print(f"Error: Could not find a results file at {results_path}")
+            return
+
+        df_filtered = df.copy()
+        if fixed_params is not None:
+            for param, value in fixed_params.items():
+                if pd.api.types.is_float_dtype(df_filtered[param]):
+                    mask = pd.Series(False, index=df_filtered.index)
+                    for v in value:
+                        mask |= np.isclose(df_filtered[param], v)
+                    df_filtered = df_filtered[mask]
+                else:
+                    df_filtered = df_filtered[df_filtered[param].isin(value)]
+
+        if df_filtered.empty:
+            print("Warning: No data matches the specified fixed parameters. Nothing to plot.")
+            return
+
+        if hue=="Offset Percentage":
+            df_filtered["Offset Percentage"] *= 100
+
+        sns.set_theme(style="whitegrid", context="talk")
+        hue_values = df_filtered[hue].unique()
+        palette = sns.color_palette(n_colors=len(hue_values))
+        plt.figure(figsize=(10, 7))
+        ax = sns.lineplot(
+            data=df_filtered,
+            x=x_axis,
+            y=y_axis,
+            hue=hue,
+            marker="o",
+            legend="full",
+            palette=palette
+        )
+
+        if plot_fit:
+            for i, val in enumerate(hue_values):
+                group = df_filtered[df_filtered[hue] == val].sort_values(by=x_axis)
+                slope = group['Fit Slope'].iloc[0]
+                ax.plot(
+                    group[x_axis],
+                    group[f"Fit {y_axis}"],
+                    linestyle='--',
+                    color=palette[i],
+                    label=rf'Fit with $\delta^{{{-slope:.3f}}}$'
+                )
+
+
+        if x_log:
+            plt.xscale('log')
+        if y_log:
+            plt.yscale('log')
+        plt.legend(title=hue)
+        plt.tight_layout()
+        plt.show()
+        if save_fig:
+            path = "saved_figures/" + fig_name
+            plt.savefig(
+                path,
+                dpi=dpi
+            )
+
+
 
 
 
