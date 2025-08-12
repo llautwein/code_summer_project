@@ -1,6 +1,6 @@
 //parsed geo-file
 
-lc = 0.01;
+lc = 0.0031622776601683794;
 Point(1) = {0.0, -0.25, 0, lc};
 
 Point(2) = {1.0, -0.25, 0, lc};
@@ -21,15 +21,15 @@ Curve Loop(1) = {1,2,3,4};
 
 Plane Surface(1) ={1};
 
-Transfinite Line {3} = 1001;
+Transfinite Line {3} = 3163;
 
 // --- Mesh Refinement Fields ---
 Field[1] = Distance;
 Field[1].EdgesList = {3};
 Field[2] = Threshold;
 Field[2].IField = 1;
-Field[2].LcMin = 0.001;
-Field[2].LcMax = 0.01;
+Field[2].LcMin = 0.00031622776601683794;
+Field[2].LcMax = 0.0031622776601683794;
 Field[2].DistMin = 0.0;
 Field[2].DistMax = 0.1;
 Field[3] = Min;

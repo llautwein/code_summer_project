@@ -21,8 +21,12 @@ gmsh_parameters = {"refine_at_interface": True,
                     "transition_ratio": 0.1}
 visualiser = vis.Visualiser()
 geo_parser = gp.GeometryParser()
-cuboid_upper, cuboid_lower = geo_parser.create_3d_meshes(p0, length, width, height, mid_intersection, delta, h,
-                                                         gmsh_parameters=gmsh_parameters)
+rec_upper, rec_lower = geo_parser.create_offset_meshes(p0, length, height, mid_intersection, delta, delta_2_pctg,
+                                                             h, gmsh_parameters=gmsh_parameters)
+visualiser.mesh_plot([rec_upper, rec_lower])
+visualiser.mesh_plot([rec_upper])
+visualiser.mesh_plot([rec_lower])
+exit()
 
 interface_handler = ih.OverlappingRectanglesInterfaceHandler(cuboid_upper, cuboid_lower)
 z_interface_of_upper_domain = mid_intersection - delta / 2  # Bottom face of upper cuboid

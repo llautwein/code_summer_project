@@ -165,7 +165,7 @@ class Analyser:
             mesh1, mesh2 = geo_parser.create_offset_meshes(
                 config.left_bottom_corner, config.length, config.height,
                 config.mid_intersection, delta_1, delta_2_pctg, h,
-                gmsh_parameters=config.gmsh_parameters
+                mesh_option=config.mesh_option, gmsh_parameters=config.gmsh_parameters
             )
             interface_handler = ih.InterfaceHandler(mesh1, mesh2)
             bm1, bm2 = interface_handler.mark_interface_boundaries(2)

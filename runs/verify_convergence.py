@@ -13,8 +13,8 @@ model_problem = problem_def.ModelProblem(f)
 polynomial_degrees = [1, 2]
 step_sizes = np.logspace(np.log10(np.sqrt(0.001)), np.log10(np.sqrt(0.1)), num=4)
 analyser = analyser.Analyser()
-results = analyser.run_convergence_analysis(model_problem, u0, polynomial_degrees,
-                                            step_sizes, u0)
+results = analyser.run_convergence_analysis(model_problem, g, polynomial_degrees,
+                                            step_sizes, g)
 visualiser = visualiser.Visualiser()
 visualiser.convergence_rates_plot(results)
 

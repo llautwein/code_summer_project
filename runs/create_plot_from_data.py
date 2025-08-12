@@ -58,7 +58,8 @@ visualiser.analyse_algebraic_schwarz_plot(results_path_independent,
 
 """
 scenario = {"conforming": results_path_conforming, "independent": results_path_independent}
-#visualiser.iterations_delta_scenarios_plot(scenario, "Interface Width", "Iterations", None)
+#visualiser.iterations_delta_scenarios_plot(scenario, "Interface Width", "Iterations", {"Polynomial Degree d":[1]})
+
 visualiser.plot_parameter_study(
     results_path_scalability,
     "Total DoFs",

@@ -33,6 +33,8 @@ class Visualiser:
         plt.show()
 
     def convergence_rates_plot(self, results):
+        sns.set_theme(style="whitegrid", context="talk")
+        plt.figure(figsize=(10, 7))
         for d, data in results.items():
             h = data['h']
             L2 = data['L2']
@@ -41,11 +43,11 @@ class Visualiser:
             h = data['h']
             H1 = data['H1']
             plt.loglog(h, H1, '-x', label=f'H1-error for degree {d}')
-        plt.xlabel('Step size h')
+        plt.xlabel('Mesh element size h')
         plt.ylabel('Error')
         plt.xlim(0.01, 1)
         plt.legend()
-        plt.show()
+        plt.savefig("saved_figures/convergence_verification.png", dpi=500)
 
     def mesh_plot(self, mesh_list, ax_equal=False):
         fig, ax = plt.subplots()
@@ -126,6 +128,16 @@ class Visualiser:
         plt.grid(True, which="both", ls="--")
         plt.show()
 
+        # Plot 3: Iterations vs. Interface DoFS
+        plt.figure(figsize=(10, 6))
+        sns.lineplot(data=df, x='Interface DoFs', y='Iterations', hue='Method', marker='o', style='Method')
+        plt.xscale('log')
+        plt.xlabel('Interface Degrees of Freedom (DoFs)')
+        plt.ylabel('Iterations')
+        plt.legend(title='Method')
+        plt.grid(True, which="both", ls="--")
+        plt.show()
+
     def analyse_algebraic_schwarz_plot(self, results_path, x_axis, y_axis, fixed_params_dict, compare_by):
         df = pd.read_csv(results_path)
         print(results_path)
@@ -181,7 +193,7 @@ class Visualiser:
         plt.legend(handles=legend_handles, labels=legend_labels, title=compare_by)
         plt.show()
 
-    def iterations_delta_scenarios_plot(self, scenarios: dict, x_axis: str, y_axis: str, fixed_params:dict):
+    def iterations_delta_scenarios_plot(self, scenarios: dict, x_axis: str, y_axis: str, fixed_params:dict = None):
         """
         Compares multiple experimental mesh scenarios by creating a plot from different csv files.
         :param scenarios: A dictionary of mesh scenarios.
@@ -201,18 +213,20 @@ class Visualiser:
 
         df_filtered = pd.concat(all_dfs, ignore_index=True)
 
-        for param, value in fixed_params.items():
-            if pd.api.types.is_float_dtype(df_filtered[param]):
-                mask = pd.Series(False, index=df_filtered.index)
-                for v in value:
-                    mask |= np.isclose(df_filtered[param], v)
-                df_filtered = df_filtered[mask]
-            else:
-                df_filtered = df_filtered[df_filtered[param].isin(value)]
+        if fixed_params is not None:
+            for param, value in fixed_params.items():
+                if pd.api.types.is_float_dtype(df_filtered[param]):
+                    mask = pd.Series(False, index=df_filtered.index)
+                    for v in value:
+                        mask |= np.isclose(df_filtered[param], v)
+                    df_filtered = df_filtered[mask]
+                else:
+                    df_filtered = df_filtered[df_filtered[param].isin(value)]
 
-        if df_filtered.empty:
-            print("Warning: No data matches the specified fixed parameters. Nothing to plot.")
+            if df_filtered.empty:
+                print("Warning: No data matches the specified fixed parameters. Nothing to plot.")
             return
+        print(df_filtered)
 
         sns.set_theme(style="whitegrid", context="talk")
         plt.figure(figsize=(10, 7))
@@ -324,13 +338,16 @@ class Visualiser:
             plt.yscale('log')
         plt.legend(title=hue)
         plt.tight_layout()
-        plt.show()
+
         if save_fig:
             path = "saved_figures/" + fig_name
             plt.savefig(
                 path,
                 dpi=dpi
             )
+            plt.close()
+        else:
+            plt.show()
 
 
 

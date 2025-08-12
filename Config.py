@@ -69,15 +69,16 @@ class OffsetMeshAnalysisConfig(BaseConfig):
     The config for the analysis using offset meshes.
     """
     # Mesh
+    mesh_option = "gmsh"
     gmsh_parameters: dict = field(default_factory=lambda: {"refine_at_interface": True,
                                                            "refinement_factor": 150.0,
                                                            "transition_ratio": 0.1})
 
     # Analysis lists
-    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.1])
-    polynomial_degrees: List[int] = field(default_factory=lambda: [1, 2, 3])
-    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -4, 12))
-    offset_pctg: Union[List[float], np.ndarray] = field(default_factory=lambda: np.linspace(0, 0.9, 10))
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.09])
+    polynomial_degrees: List[int] = field(default_factory=lambda: [1])
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-2, -4, 12))
+    offset_pctg: Union[List[float], np.ndarray] = field(default_factory=lambda: [0, 0.5, 0.9])
 
     # Solver
     use_lu_solver: bool = True
@@ -97,9 +98,9 @@ class ScalabilityAnalysisConfig(BaseConfig):
                                                            "transition_ratio": 0.1})
 
     # Analysis lists
-    polynomial_degrees: List[int] = field(default_factory=lambda: [1, 2, 3])
-    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -2, 4))
-    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -2, 8))
+    polynomial_degrees: List[int] = field(default_factory=lambda: [1])
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.01])
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-0.5, -2.5, 8))
 
     # Solver
     use_lu_solver: bool = True
@@ -123,8 +124,8 @@ class MeshAnalysis3d(BaseConfig):
                                                            "transition_ratio": 0.1})
 
     # Analysis lists
-    polynomial_degrees: List[int] = field(default_factory=lambda: [1, 2, 3])
-    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -4, 12))
+    polynomial_degrees: List[int] = field(default_factory=lambda: [1])
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -3, 8))
     mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.25])
 
     # Solver
@@ -143,7 +144,7 @@ class DDMComparisonConfig(BaseConfig):
                                                            "transition_ratio": 0.1})
     # Analysis lists
     interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.1])
-    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-0.5, -2, 10))
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -2, 8))
 
     # Solver
     use_lu_solver: bool = True

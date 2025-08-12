@@ -669,7 +669,7 @@ class GeometryParser:
 
     def create_offset_meshes(self, p0: Point, length: float, height: float,
                                  mid_intersection: float, delta_1: float, delta_2_pctg: float,
-                                 h:float, gmsh_parameters: dict=None)->Tuple[Mesh, Mesh]:
+                                 h:float, mesh_option: str="gmsh", gmsh_parameters: dict=None)->Tuple[Mesh, Mesh]:
         # Calculate the heights of the overlapping rectangles
         height_1 = mid_intersection + delta_1 / 2 - p0[1]
         height_2 = height - height_1 + delta_1
@@ -677,47 +677,60 @@ class GeometryParser:
         # Lower rectangle:
         # The point p0_lower is the left bottom corner of the lower rectangle
         p0_lower = Point(p0[0], p0[1])
+        p1_lower = Point(p0[0]+length, p0[1]+height_1)
 
         # Upper rectangle (same principle):
         # p0_upper is the left bottom corner of the upper rectangle
         delta_2 = delta_2_pctg * length
         p0_upper = Point(p0[0] + delta_2, mid_intersection - delta_1 / 2)
+        p1_upper = Point(p0[0] + length + delta_2, mid_intersection - delta_1 / 2 + height_2)
 
-        if gmsh_parameters is None:
-            gmsh_parameters = {}
+        if mesh_option=="built-in":
+            # Define the mesh resolution in the horizontal and vertical directions based on the element size
+            nx = max(1, int(round(length / h)))
+            ny_1 = max(1, int(round(height_1 / h)))
+            ny_2 = max(1, int(round(height_2 / h)))
 
-        refinement_factor = gmsh_parameters.get('refinement_factor', 10.0)
-        transition_ratio = gmsh_parameters.get('transition_ratio', 0.25)
+            # Create meshes directly using FEniCS
+            rectangle_upper = RectangleMesh(p0_upper, p1_upper, nx, ny_1)
+            rectangle_lower = RectangleMesh(p0_lower, p1_lower, nx, ny_2)
+        elif mesh_option=="gmsh":
 
-        refine_lower_edge = None
-        refine_upper_edge = None
-        if gmsh_parameters.get('refine_at_interface', False):
-            refine_lower_edge = 'top'
-            refine_upper_edge = 'bottom'
+            if gmsh_parameters is None:
+                gmsh_parameters = {}
 
-        self.rectangle_mesh(
-            lc=h,
-            left_bottom_corner=p0_lower,
-            length=length,
-            height=height_1,
-            file_name="rectangle_lower",
-            refine_edge=refine_lower_edge,
-            refinement_factor=refinement_factor,
-            transition_ratio=transition_ratio
-        )
-        rectangle_lower = self.load_mesh("rectangle_lower")
+            refinement_factor = gmsh_parameters.get('refinement_factor', 10.0)
+            transition_ratio = gmsh_parameters.get('transition_ratio', 0.25)
 
-        self.rectangle_mesh(
-            lc=h,
-            left_bottom_corner=p0_upper,
-            length=length,
-            height=height_2,
-            file_name="rectangle_upper",
-            refine_edge=refine_upper_edge,
-            refinement_factor=refinement_factor,
-            transition_ratio=transition_ratio
-        )
-        rectangle_upper = self.load_mesh("rectangle_upper")
+            refine_lower_edge = None
+            refine_upper_edge = None
+            if gmsh_parameters.get('refine_at_interface', False):
+                refine_lower_edge = 'top'
+                refine_upper_edge = 'bottom'
+
+            self.rectangle_mesh(
+                lc=h,
+                left_bottom_corner=p0_lower,
+                length=length,
+                height=height_1,
+                file_name="rectangle_lower",
+                refine_edge=refine_lower_edge,
+                refinement_factor=refinement_factor,
+                transition_ratio=transition_ratio
+            )
+            rectangle_lower = self.load_mesh("rectangle_lower")
+
+            self.rectangle_mesh(
+                lc=h,
+                left_bottom_corner=p0_upper,
+                length=length,
+                height=height_2,
+                file_name="rectangle_upper",
+                refine_edge=refine_upper_edge,
+                refinement_factor=refinement_factor,
+                transition_ratio=transition_ratio
+            )
+            rectangle_upper = self.load_mesh("rectangle_upper")
 
         return rectangle_upper, rectangle_lower
 
