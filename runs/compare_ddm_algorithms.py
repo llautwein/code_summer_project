@@ -3,7 +3,6 @@ from dolfin import *
 import ProblemDefinition as problem_def
 from Config import DDMComparisonConfig
 
-
 f_1 = Expression("(8*pi*pi+1)*sin(2*pi*x[0])*cos(2*pi*x[1])", degree=2)
 g_1 = Expression("sin(2*pi*x[0])*cos(2*pi*x[1])", degree=6)
 model_problem = problem_def.ModelProblem(f_1)

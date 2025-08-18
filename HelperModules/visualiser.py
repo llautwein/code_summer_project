@@ -8,6 +8,16 @@ class Visualiser:
     """
     A class summarising all plot routines.
     """
+
+    def __init__(self):
+        plt.rcParams.update({
+            'axes.titlesize': 16,
+            'axes.labelsize': 14,
+            "xtick.labelsize": 14,
+            "ytick.labelsize": 14,
+            "legend.fontsize": 14
+        })
+
     @staticmethod
     def plot_3d(u_sol, mesh):
         vertex_coords = mesh.coordinates()
@@ -34,7 +44,6 @@ class Visualiser:
 
     def convergence_rates_plot(self, results):
         sns.set_theme(style="whitegrid", context="talk")
-        plt.figure(figsize=(10, 7))
         for d, data in results.items():
             h = data['h']
             L2 = data['L2']
@@ -63,8 +72,9 @@ class Visualiser:
 
         if ax_equal:
             ax.set_aspect('equal')
-
         plt.show()
+        #plt.savefig("saved_figures/mesh_lower.png", dpi=500)
+        #plt.close()
 
     @staticmethod
     def heatmap_plot(u_sol, mesh):
@@ -105,7 +115,7 @@ class Visualiser:
     def compare_ddm_methods_plot(self, results_path):
         df = pd.read_csv(results_path)
 
-        sns.set_theme(style="whitegrid")
+        sns.set_theme(style="whitegrid", context="talk")
 
         # Plot 1: Total Time vs. DoFs
         plt.figure(figsize=(10, 6))
@@ -116,7 +126,8 @@ class Visualiser:
         plt.ylabel('Overall Run Time (s)')
         plt.legend(title='Method')
         plt.grid(True, which="both", ls="--")
-        plt.show()
+        plt.savefig("saved_figures/ddm_comp_totaldofs_time.png", dpi=500)
+        plt.close()
 
         # Plot 2: Iterations vs. DoFs
         plt.figure(figsize=(10, 6))
@@ -126,7 +137,8 @@ class Visualiser:
         plt.ylabel('Number of Iterations')
         plt.legend(title='Method')
         plt.grid(True, which="both", ls="--")
-        plt.show()
+        plt.savefig("saved_figures/ddm_comp_totaldofs_iterations.png", dpi=500)
+        plt.close()
 
         # Plot 3: Iterations vs. Interface DoFS
         plt.figure(figsize=(10, 6))
@@ -136,7 +148,19 @@ class Visualiser:
         plt.ylabel('Iterations')
         plt.legend(title='Method')
         plt.grid(True, which="both", ls="--")
-        plt.show()
+        plt.savefig("saved_figures/ddm_comp_interfacedofs_iterations.png", dpi=500)
+        plt.close()
+
+        plt.figure(figsize=(10, 6))
+        sns.lineplot(data=df, x="Total DoFs", y='Error_1', hue='Method', marker='o', style='Method')
+        plt.xscale('log')
+        plt.xlabel('Total Degrees of Freedom (DoFs)')
+        plt.ylabel('Error')
+        plt.yscale('log')
+        plt.legend(title='Method')
+        plt.grid(True, which="both", ls="--")
+        plt.savefig("saved_figures/ddm_comp_totaldofs_error1.png", dpi=500)
+        plt.close()
 
     def analyse_algebraic_schwarz_plot(self, results_path, x_axis, y_axis, fixed_params_dict, compare_by):
         df = pd.read_csv(results_path)
@@ -225,8 +249,7 @@ class Visualiser:
 
             if df_filtered.empty:
                 print("Warning: No data matches the specified fixed parameters. Nothing to plot.")
-            return
-        print(df_filtered)
+                return
 
         sns.set_theme(style="whitegrid", context="talk")
         plt.figure(figsize=(10, 7))
@@ -240,9 +263,9 @@ class Visualiser:
             data=df_filtered,
             x=x_axis,
             y=y_axis,
-            style="Scenario",
             hue='Scenario',
             marker='o',
+            linestyle='-',
             legend="full",
             palette=palette,
             ax=ax
@@ -252,11 +275,13 @@ class Visualiser:
             group = group.sort_values(by='Interface Width')
 
             slope = group['Fit Slope'].iloc[0]
+            name = ("conforming", "independent")
 
             ax.plot(group['Interface Width'], group['Fit Iterations'],
                     linestyle='--',
-                    color=palette[i],
-                    label=rf"Fit for {name} ($\delta^{{{-slope:.3f}}}$)")
+                    label=rf"Fit for {name[i]} ($\delta^{{-{slope:.3f}}}$)",
+                    color=palette[i])
+
 
         plt.xlabel(r"Interface Width ($\delta$)")
         plt.ylabel("Number of Iterations")
@@ -266,7 +291,9 @@ class Visualiser:
         plt.legend(title='Mesh Scenario')
 
         plt.grid(True, which="both", ls="--")
-        plt.show()
+        plt.savefig("saved_figures/delta_dependence_comparison_gmsh.png", dpi=500)
+        plt.close()
+        #plt.show()
 
     @staticmethod
     def plot_parameter_study(results_path: str, x_axis: str, y_axis: str, hue: str,
@@ -313,6 +340,7 @@ class Visualiser:
             data=df_filtered,
             x=x_axis,
             y=y_axis,
+            errorbar=("sd", 1),
             hue=hue,
             marker="o",
             legend="full",

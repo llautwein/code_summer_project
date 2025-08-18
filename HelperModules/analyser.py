@@ -7,8 +7,8 @@ import time
 import pandas as pd
 import numpy as np
 from scipy import stats
-from Config import (ConformingMeshAnalysisConfig, IndependentMeshAnalysisConfig,
-                    OffsetMeshAnalysisConfig, DDMComparisonConfig, ScalabilityAnalysisConfig, MeshAnalysis3d)
+from Config import (ConformingMeshAnalysisConfig, IndependentMeshAnalysisConfig, OffsetMeshAnalysisConfig,
+                    DDMComparisonConfig, ScalabilityAnalysisConfig, MeshAnalysis3d, InterpolationError)
 
 
 
@@ -67,6 +67,9 @@ class Analyser:
                                                                             gmsh_parameters=config.gmsh_parameters)
                 V_1 = FunctionSpace(rec_upper, "CG", 1)
                 V_2 = FunctionSpace(rec_lower, "CG", 1)
+                g_1 = Expression("sin(2*pi*x[0])*cos(2*pi*x[1])", degree=6)
+                sol_analytic_rec_upper = interpolate(g_1, V_1)
+                sol_analytic_rec_lower = interpolate(g_1, V_2)
                 total_dofs = V_1.dim() + V_2.dim()
                 interface_handler = ih.OverlappingRectanglesInterfaceHandler(rec_upper, rec_lower)
 
@@ -90,7 +93,9 @@ class Analyser:
                     'Total DoFs': total_dofs,
                     'Interface DoFs': interface_problem_size,
                     'Time (s)': end_time_alt - start_time_alt,
-                    'Iterations': schwarz_alternating.get_last_iteration_count()
+                    'Iterations': schwarz_alternating.get_last_iteration_count(),
+                    'Error_1': errornorm(sol_analytic_rec_upper, u1, "l2"),
+                    'Error_2': errornorm(sol_analytic_rec_lower, u2, "l2")
                 })
 
                 print("Algebraic Schwarz method")
@@ -109,7 +114,9 @@ class Analyser:
                     'Total DoFs': total_dofs,
                     'Interface DoFs': interface_problem_size,
                     'Time (s)': (end_setup_time_alg - start_setup_time_alg) + (end_solve_time_alg - start_solve_time_alg),
-                    'Iterations': schwarz_algebraic.get_last_iteration_count()
+                    'Iterations': schwarz_algebraic.get_last_iteration_count(),
+                    'Error_1': errornorm(sol_analytic_rec_upper, u1, "l2"),
+                    'Error_2': errornorm(sol_analytic_rec_lower, u2, "l2")
                 })
 
                 print("Matrix free Schwarz method")
@@ -128,13 +135,15 @@ class Analyser:
                     'Total DoFs': total_dofs,
                     'Interface DoFs': interface_problem_size,
                     'Time (s)': (end_setup_time_mf - start_setup_time_mf) + (end_solve_time_mf - start_solve_time_mf),
-                    'Iterations': schwarz_mf.get_last_iteration_count()
+                    'Iterations': schwarz_mf.get_last_iteration_count(),
+                    'Error_1': errornorm(sol_analytic_rec_upper, u1, "l2"),
+                    'Error_2': errornorm(sol_analytic_rec_lower, u2, "l2")
                 })
 
         df = pd.DataFrame(results)
         df.to_csv(config.results_path, index=False)
 
-    def _run_single_simulation(self, config, mesh_params):
+    def _run_single_simulation(self, config, mesh_params, compute_errors=False, interpolation_scenario=None, N_overlap=1):
         """
         Private helper method to run one simulation for a given set of parameters.
         This contains the core logic that was duplicated in all your analyse_... methods.
@@ -180,6 +189,24 @@ class Analyser:
             y_upper = config.mid_intersection - (delta or delta_1) / 2
             y_lower = config.mid_intersection + (delta or delta_1) / 2
             bm1, bm2 = interface_handler.mark_interface_boundaries(y_upper, y_lower)
+        elif isinstance(config, InterpolationError):
+            if interpolation_scenario=="independent":
+                mesh1, mesh2 = geo_parser.create_independent_meshes(
+                    config.left_bottom_corner, config.length, config.height,
+                    config.mid_intersection, delta, h,
+                    mesh_option=config.mesh_option, gmsh_parameters=config.gmsh_parameters
+                )
+            elif interpolation_scenario=="conforming":
+                mesh1, mesh2 = geo_parser.create_conforming_meshes(
+                    config.left_bottom_corner, config.length, config.height,
+                    config.mid_intersection, delta, N_overlap=N_overlap,
+                    mesh_option=config.mesh_option, gmsh_parameters=config.gmsh_parameters
+                )
+            interface_handler = ih.OverlappingRectanglesInterfaceHandler(mesh1, mesh2)
+            y_upper = config.mid_intersection - (delta or delta_1) / 2
+            y_lower = config.mid_intersection + (delta or delta_1) / 2
+            bm1, bm2 = interface_handler.mark_interface_boundaries(y_upper, y_lower)
+
         elif isinstance(config, ScalabilityAnalysisConfig):
             mesh1, mesh2 = geo_parser.create_independent_meshes(
                 config.left_bottom_corner, config.length, config.height,
@@ -221,8 +248,7 @@ class Analyser:
         u1, u2 = schwarz_algebraic.solve(config.tol, config.max_iter)
         end_time = time.perf_counter()
 
-        # Return Results Dictionary
-        return {
+        results = {
             'Mesh Size (h)': h,
             'Polynomial Degree d': d,
             'Interface Width': delta or delta_1,
@@ -230,8 +256,17 @@ class Analyser:
             'Total DoFs': V_1.dim() + V_2.dim(),
             'Interface DoFs': interface_problem_size,
             'Total Time (s)': end_time - start_time,
-            'Iterations': schwarz_algebraic.get_last_iteration_count()
+            'Iterations': schwarz_algebraic.get_last_iteration_count(),
         }
+
+        if compute_errors:
+            g_1 = Expression("sin(2*pi*x[0])*cos(2*pi*x[1])", degree=6)
+            sol_analytic_rec_upper = interpolate(g_1, V_1)
+            sol_analytic_rec_lower = interpolate(g_1, V_2)
+            results['Error_1'] = errornorm(sol_analytic_rec_upper, u1, "l2")
+            results['Error_2'] = errornorm(sol_analytic_rec_lower, u2, "l2")
+
+        return results, u1, u2
 
     def analyse_independent_meshes(self, config: IndependentMeshAnalysisConfig):
         results = []
@@ -240,7 +275,8 @@ class Analyser:
                 for delta in config.interface_widths:
                     print(f"Running Independent: h={h}, d={d}, delta={delta:.4f}")
                     params = {'h': h, 'd': d, 'delta': delta}
-                    results.append(self._run_single_simulation(config, params))
+                    temp_results, _, _ = self._run_single_simulation(config, params)
+                    results.append(temp_results)
         self.post_process(results, ['Mesh Size (h)', 'Polynomial Degree d'], config.results_path)
 
     def analyse_conforming_meshes(self, config: ConformingMeshAnalysisConfig):
@@ -249,7 +285,8 @@ class Analyser:
             for delta in config.interface_widths:
                 print(f"Running Conforming: d={d}, delta={delta:.4f}")
                 params = {'d': d, 'delta': delta}
-                results.append(self._run_single_simulation(config, params))
+                temp_results, _, _ = self._run_single_simulation(config, params)
+                results.append(temp_results)
         self.post_process(results, ['Polynomial Degree d'], config.results_path)
 
     def analyse_offset_meshes(self, config: OffsetMeshAnalysisConfig):
@@ -260,7 +297,8 @@ class Analyser:
                     for delta_2_pctg in config.offset_pctg:
                         print(f"Running Offset: h={h}, d={d}, delta_1={delta_1:.4f}, offset={delta_2_pctg:.2f}")
                         params = {'h': h, 'd': d, 'delta_1': delta_1, 'delta_2_pctg': delta_2_pctg}
-                        results.append(self._run_single_simulation(config, params))
+                        temp_results, _, _ = self._run_single_simulation(config, params)
+                        results.append(temp_results)
         self.post_process(results, ['Mesh Size (h)', 'Polynomial Degree d', 'Offset Percentage'], config.results_path)
 
     def analyse_scalability(self, config: ScalabilityAnalysisConfig):
@@ -270,7 +308,8 @@ class Analyser:
                 for delta in config.interface_widths:
                     print(f"Running Scalability: h={h}, d={d}, delta={delta:.4f}")
                     params = {'h': h, 'd': d, 'delta': delta}
-                    results.append(self._run_single_simulation(config, params))
+                    temp_results, _, _ = self._run_single_simulation(config, params)
+                    results.append(temp_results)
         df = pd.DataFrame(results)
         df.to_csv(config.results_path, index=False)
         print(f"\nScalability analysis complete. Results saved to {config.results_path}")
@@ -282,8 +321,61 @@ class Analyser:
                 for delta in config.interface_widths:
                     print(f"Running 3D: h={h}, d={d}, delta={delta:.4f}")
                     params = {'h': h, 'd': d, 'delta': delta}
-                    results.append(self._run_single_simulation(config, params))
+                    temp_results, _, _ = self._run_single_simulation(config, params)
+                    results.append(temp_results)
         self.post_process(results, ['Mesh Size (h)', 'Polynomial Degree d'], config.results_path)
+
+    def analyse_interpolation_error(self, config: InterpolationError):
+        results = []
+        p0 = config.left_bottom_corner
+        for h in config.mesh_resolutions:
+            print(f"Running independent: h={h}")
+            params = {'h': h, 'd': config.polynomial_degree, 'delta': config.delta}
+            _, u1, u2 =self._run_single_simulation(config, params, interpolation_scenario="independent")
+            height_1 = config.mid_intersection + config.delta / 2 - p0[1]
+            height_2 = config.height - height_1 + config.delta
+            omega_1 = {"x": (p0[0], p0[0] + config.length), "y": (p0[1], p0[1] + height_1)}
+            omega_2 = {"x": (p0[0], p0[0] + config.length),
+                       "y": (config.mid_intersection - config.delta / 2, config.mid_intersection - config.delta / 2 + height_2)}
+            V_1 = u1.function_space()
+            V_2 = u2.function_space()
+            overlap_indices_in_V1 = self.get_overlap_dof_indices(V_1, omega_1, omega_2)
+            error, std = self.compute_dof_interface_error(u1, u2, overlap_indices_in_V1)
+            results.append({
+                'Scenario': 'independent',
+                'Mesh Size (h)': h,
+                'Interface Width': config.delta,
+                'Total DoFs': V_1.dim() + V_2.dim(),
+                'Interface Error': error,
+                'Std': std
+            })
+
+        for n in config.N_overlaps:
+            print(f"Running conforming: N_overlap={n}")
+            params = {'d': config.polynomial_degree, 'delta': config.delta}
+            _, u1, u2 = self._run_single_simulation(config, params, interpolation_scenario="conforming", N_overlap=n)
+            height_1 = config.mid_intersection + config.delta / 2 - p0[1]
+            height_2 = config.height - height_1 + config.delta
+            omega_1 = {"x": (p0[0], p0[0] + config.length), "y": (p0[1], p0[1] + height_1)}
+            omega_2 = {"x": (p0[0], p0[0] + config.length),
+                       "y": (config.mid_intersection - config.delta / 2,
+                             config.mid_intersection - config.delta / 2 + height_2)}
+            V_1 = u1.function_space()
+            V_2 = u2.function_space()
+            overlap_indices_in_V1 = self.get_overlap_dof_indices(V_1, omega_1, omega_2)
+            error, std = self.compute_dof_interface_error(u1, u2, overlap_indices_in_V1)
+            results.append({
+                'Scenario': 'conforming',
+                'Mesh Size (h)': None,
+                'Interface Width': config.delta,
+                'Total DoFs': V_1.dim() + V_2.dim(),
+                'Interface Error': error,
+                'Std': std
+            })
+        df = pd.DataFrame(results)
+        df.to_csv(config.results_path, index=False)
+        print(f"\n Analysis complete. Results saved to {config.results_path}")
+
 
     def post_process(self, results, grouping_cols, results_path):
         """
@@ -295,7 +387,6 @@ class Analyser:
         :return:
         """
         df = pd.DataFrame(results)
-        print(df)
         df['1 / Interface Width'] = 1.0 / df['Interface Width']
 
         df_final = df.groupby(grouping_cols, group_keys=False).apply(
@@ -339,5 +430,60 @@ class Analyser:
         df_fit['Fit ' + y_col] = y_fit
         df_fit['Fit Slope'] = slope
         df_fit['Fit R2'] = r_value ** 2
+        df_fit['Fit Intercept'] = intercept
 
         return df_fit
+
+    @staticmethod
+    def is_in_domain(coord, domain_geom, tol=1E-9):
+        """
+        Checks if a coordinate point is inside a rectangular domain geometry.
+        """
+        x_range = domain_geom['x']
+        y_range = domain_geom['y']
+
+        in_x = (x_range[0] - tol <= coord[0] <= x_range[1] + tol)
+        in_y = (y_range[0] - tol <= coord[1] <= y_range[1] + tol)
+
+        return in_x and in_y
+
+    def get_overlap_dof_indices(self, V, omega1_geom, omega2_geom):
+        """
+        Finds the indices of the Degrees of Freedom (DoFs) that lie in the
+        overlap region of two domains.
+        """
+        # Get the coordinates of all DoFs in the function space
+        dof_coords = V.tabulate_dof_coordinates()
+
+        overlap_indices = []
+
+        # Iterate over each DoF and its coordinate
+        for i, coord in enumerate(dof_coords):
+            if self.is_in_domain(coord, omega1_geom) and self.is_in_domain(coord, omega2_geom):
+                overlap_indices.append(i)
+
+        return np.array(overlap_indices, dtype=int)
+
+    def compute_dof_interface_error(self, u1, u2, overlap_dof_indices_in_V1):
+        """
+        Computes a discrete L2 norm of the difference between two solutions
+        at the nodes of V1 that lie in the overlap.
+        """
+        V1 = u1.function_space()
+        dof_coords_V1 = V1.tabulate_dof_coordinates()
+
+        overlap_coords = dof_coords_V1[overlap_dof_indices_in_V1]
+
+        u1_values = u1.vector()[overlap_dof_indices_in_V1]
+
+        u2_values = np.array([u2(p) for p in overlap_coords])
+
+        diff_sq = (u1_values - u2_values) ** 2
+
+        mean_sq_error = np.mean(diff_sq)
+        error = np.sqrt(mean_sq_error)
+
+        std = np.std(u1_values-u2_values)
+
+        return error, std
+

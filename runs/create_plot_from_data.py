@@ -18,6 +18,7 @@ results_path_conforming = "output_files/algebraic_schwarz_analysis_conforming.cs
 results_path_offset = "output_files/algebraic_schwarz_analysis_offset.csv"
 results_path_3d = "output_files/algebraic_schwarz_analysis_3d.csv"
 results_path_scalability = "output_files/algebraic_schwarz_analysis_scalability.csv"
+results_path_interpolation = "output_files/interpolation_error.csv"
 # Mesh Size (h), Polynomial Degree d, Interface Width, Total DoFs, Time (s), Iterations
 
 def filter_dataframe(df: pd.DataFrame, fixed_col: str, fixed_vals_idcs: list) -> pd.DataFrame:
@@ -58,14 +59,15 @@ visualiser.analyse_algebraic_schwarz_plot(results_path_independent,
 
 """
 scenario = {"conforming": results_path_conforming, "independent": results_path_independent}
-#visualiser.iterations_delta_scenarios_plot(scenario, "Interface Width", "Iterations", {"Polynomial Degree d":[1]})
-
+visualiser.iterations_delta_scenarios_plot(scenario, "Interface Width", "Iterations", {"Polynomial Degree d":[1]})
+"""
 visualiser.plot_parameter_study(
-    results_path_scalability,
+    results_path_interpolation,
     "Total DoFs",
-    "Iterations",
-      "Polynomial Degree d",
-    fixed_params={"Interface Width": [0.01]},
+    "Std",
+      "Scenario",
+    fixed_params={"Interface Width": [0.1]},
     plot_fit=False,
-    x_log=True, y_log=True
-)
+    x_log=True, y_log=True,
+    save_fig=False, fig_name="iterations_dofs_delta=0-01", dpi=500
+)"""

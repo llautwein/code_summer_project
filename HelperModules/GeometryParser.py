@@ -575,6 +575,7 @@ class GeometryParser:
             print(f"Reading Gmsh output file: {msh_path}")
             msh = meshio.read(msh_path)
             target_meshio_type = 'triangle'
+            meshio.write(f"meshes/conforming_mesh.xdmf", msh)
 
             try:
                 # Extract all the cell coordinates and the respective tags

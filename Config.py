@@ -32,7 +32,7 @@ class ConformingMeshAnalysisConfig(BaseConfig):
     gmsh_parameters: dict = field(default_factory=lambda: {"lc_coarse": 0.25})
 
     # Analysis lists
-    polynomial_degrees: List[int] = field(default_factory=lambda:[1, 2])
+    polynomial_degrees: List[int] = field(default_factory=lambda:[1])
     interface_widths: Union[List[int], np.ndarray] = field(default_factory=lambda:np.logspace(-1, -4, 12))
 
     # Solver
@@ -53,7 +53,7 @@ class IndependentMeshAnalysisConfig(BaseConfig):
                                                           "transition_ratio": 0.1})
 
     # Analysis lists
-    polynomial_degrees: List[int] = field(default_factory=lambda:[1, 2, 3])
+    polynomial_degrees: List[int] = field(default_factory=lambda:[1])
     interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda:np.logspace(-1, -4, 12))
     mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda:[0.1])
 
@@ -75,9 +75,9 @@ class OffsetMeshAnalysisConfig(BaseConfig):
                                                            "transition_ratio": 0.1})
 
     # Analysis lists
-    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.09])
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.1])
     polynomial_degrees: List[int] = field(default_factory=lambda: [1])
-    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-2, -4, 12))
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -4, 12))
     offset_pctg: Union[List[float], np.ndarray] = field(default_factory=lambda: [0, 0.5, 0.9])
 
     # Solver
@@ -98,15 +98,29 @@ class ScalabilityAnalysisConfig(BaseConfig):
                                                            "transition_ratio": 0.1})
 
     # Analysis lists
-    polynomial_degrees: List[int] = field(default_factory=lambda: [1])
+    polynomial_degrees: List[int] = field(default_factory=lambda: [1, 2])
     interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.01])
-    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-0.5, -2.5, 8))
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-0.5, -2, 6))
 
     # Solver
     use_lu_solver: bool = True
 
     # I/O
     results_path: str = "output_files/algebraic_schwarz_analysis_scalability.csv"
+
+@dataclass
+class InterpolationError(BaseConfig):
+    mesh_option: str = "gmsh"
+    gmsh_parameters: dict = field(default_factory=lambda: {"refine_at_interface": True,
+                                                           "refinement_factor": 10.0,
+                                                           "transition_ratio": 0.1})
+    polynomial_degree: List[int] = field(default_factory=lambda: 1)
+    delta: Union[List[float], np.ndarray] = field(default_factory=lambda: 0.1)
+    N_overlaps: List[int] = field(default_factory=lambda: [1, 2, 8, 20, 60])
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-0.5, -2, 5))
+    results_path = "output_files/interpolation_error.csv"
+
+    use_lu_solver: bool = True
 
 @dataclass
 class MeshAnalysis3d(BaseConfig):
@@ -144,7 +158,7 @@ class DDMComparisonConfig(BaseConfig):
                                                            "transition_ratio": 0.1})
     # Analysis lists
     interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.1])
-    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -2, 8))
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -2.5, 10))
 
     # Solver
     use_lu_solver: bool = True
