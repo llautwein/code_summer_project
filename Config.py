@@ -116,7 +116,7 @@ class InterpolationError(BaseConfig):
                                                            "transition_ratio": 0.1})
     polynomial_degree: List[int] = field(default_factory=lambda: 1)
     delta: Union[List[float], np.ndarray] = field(default_factory=lambda: 0.1)
-    N_overlaps: List[int] = field(default_factory=lambda: [1, 2, 8, 20, 60])
+    N_overlaps: List[int] = field(default_factory=lambda: [1, 5, 10, 20, 60])
     mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-0.5, -2, 5))
     results_path = "output_files/interpolation_error.csv"
 
@@ -128,19 +128,19 @@ class MeshAnalysis3d(BaseConfig):
     The config for the analysis using independent meshes.
     """
     # Mesh
-    left_bottom_corner: Point = field(default_factory=lambda: Point(0, 0, -0.25))
-    length: float = 1
-    width: float = 1
-    height: float = 2
+    left_bottom_corner: Point = field(default_factory=lambda: Point(0, 0, 0))
+    length: float = 0.5
+    width: float = 0.5
+    height: float = 1.5
     mid_intersection: float = 0.75
     gmsh_parameters: dict = field(default_factory=lambda: {"refine_at_interface": True,
-                                                           "refinement_factor": 75.0,
+                                                           "refinement_factor": 1500.0,
                                                            "transition_ratio": 0.1})
 
     # Analysis lists
     polynomial_degrees: List[int] = field(default_factory=lambda: [1])
-    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -3, 8))
-    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.25])
+    interface_widths: Union[List[float], np.ndarray] = field(default_factory=lambda: np.logspace(-1, -3.5, 9))
+    mesh_resolutions: Union[List[float], np.ndarray] = field(default_factory=lambda: [0.2])
 
     # Solver
     use_lu_solver: bool = True

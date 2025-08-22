@@ -8,23 +8,23 @@ import CompositionMethod as cm
 from dolfin import *
 import fenics
 
-p0 = Point(0, -0.25)
+p0 = Point(0, 0, -0.25)
 length = 1
 height = 2
 width = 1
 mid_intersection = 0.75
 delta = 0.1
 delta_2_pctg = 0.9
-h = 0.1
+h = 0.3
 mesh_option = "gmsh"
 gmsh_parameters = {"refine_at_interface": True,
-                    "refinement_factor": 150.0,
+                    "refinement_factor": 10.0,
                     "transition_ratio": 0.1}
 visualiser = vis.Visualiser()
 geo_parser = gp.GeometryParser()
 analyser = analyser.Analyser()
-rec_upper, rec_lower = geo_parser.create_independent_meshes(p0, length, height, mid_intersection, delta, h,
-                                                            gmsh_parameters=gmsh_parameters, mesh_option=mesh_option)
+rec_upper, rec_lower = geo_parser.create_3d_meshes(p0, length, width, height, mid_intersection, delta, h,
+                                                    gmsh_parameters=gmsh_parameters)
 exit()
 
 #visualiser.mesh_plot([rec_upper, rec_lower], ax_equal=True)

@@ -38,7 +38,7 @@ config_3d = MeshAnalysis3d(
     problem_2=model_problem_3d, g_2=g_1_3d
 )
 
-mode = "independent"
+mode = "3d"
 analyser = analyser.Analyser()
 if mode=="conforming":
     config = conforming_config

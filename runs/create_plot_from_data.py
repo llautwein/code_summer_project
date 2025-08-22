@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-
 from HelperModules import visualiser
 import numpy as np
 import pandas as pd
@@ -59,15 +58,15 @@ visualiser.analyse_algebraic_schwarz_plot(results_path_independent,
 
 """
 scenario = {"conforming": results_path_conforming, "independent": results_path_independent}
-visualiser.iterations_delta_scenarios_plot(scenario, "Interface Width", "Iterations", {"Polynomial Degree d":[1]})
-"""
+#visualiser.iterations_delta_scenarios_plot(scenario, "Interface Width", "Iterations", {"Polynomial Degree d":[1]})
+
 visualiser.plot_parameter_study(
-    results_path_interpolation,
-    "Total DoFs",
-    "Std",
-      "Scenario",
-    fixed_params={"Interface Width": [0.1]},
-    plot_fit=False,
+    results_path_3d,
+    "Interface Width",
+    "Iterations",
+      "Polynomial Degree d",
+    #fixed_params={"Polynomial Degree d": [1]},
+    plot_fit=True,
     x_log=True, y_log=True,
-    save_fig=False, fig_name="iterations_dofs_delta=0-01", dpi=500
-)"""
+    save_fig=True, fig_name="delta_iterations_3d", dpi=500
+)

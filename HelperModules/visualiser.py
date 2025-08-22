@@ -134,7 +134,7 @@ class Visualiser:
         sns.lineplot(data=df, x='Total DoFs', y='Iterations', hue='Method', marker='o', style='Method')
         plt.xscale('log')
         plt.xlabel('Total Degrees of Freedom (DoFs)')
-        plt.ylabel('Number of Iterations')
+        plt.ylabel('Iterations')
         plt.legend(title='Method')
         plt.grid(True, which="both", ls="--")
         plt.savefig("saved_figures/ddm_comp_totaldofs_iterations.png", dpi=500)
@@ -284,7 +284,6 @@ class Visualiser:
 
 
         plt.xlabel(r"Interface Width ($\delta$)")
-        plt.ylabel("Number of Iterations")
         plt.xscale('log')
         plt.yscale('log')
 
@@ -329,8 +328,9 @@ class Visualiser:
             print("Warning: No data matches the specified fixed parameters. Nothing to plot.")
             return
 
-        if hue=="Offset Percentage":
-            df_filtered["Offset Percentage"] *= 100
+        #if hue=="Offset Percentage":
+        #df_filtered["Offset Percentage"] *= 100
+
 
         sns.set_theme(style="whitegrid", context="talk")
         hue_values = df_filtered[hue].unique()
@@ -356,9 +356,8 @@ class Visualiser:
                     group[f"Fit {y_axis}"],
                     linestyle='--',
                     color=palette[i],
-                    label=rf'Fit with $\delta^{{{-slope:.3f}}}$'
+                    label=rf'Fit with $\delta_1^{{{-slope:.3f}}}$'
                 )
-
 
         if x_log:
             plt.xscale('log')
@@ -366,6 +365,8 @@ class Visualiser:
             plt.yscale('log')
         plt.legend(title=hue)
         plt.tight_layout()
+        plt.xlabel(r"Interface Width $\delta_1$")
+
 
         if save_fig:
             path = "saved_figures/" + fig_name

@@ -11,7 +11,6 @@ from Config import (ConformingMeshAnalysisConfig, IndependentMeshAnalysisConfig,
                     DDMComparisonConfig, ScalabilityAnalysisConfig, MeshAnalysis3d, InterpolationError)
 
 
-
 class Analyser:
     """
     A collection of static methods to run and post-process numerical experiments.
@@ -146,7 +145,6 @@ class Analyser:
     def _run_single_simulation(self, config, mesh_params, compute_errors=False, interpolation_scenario=None, N_overlap=1):
         """
         Private helper method to run one simulation for a given set of parameters.
-        This contains the core logic that was duplicated in all your analyse_... methods.
         """
         # Unpack mesh parameters
         h = mesh_params.get('h', None)
@@ -171,13 +169,20 @@ class Analyser:
             y_lower = config.mid_intersection + (delta or delta_1) / 2
             bm1, bm2 = interface_handler.mark_interface_boundaries(y_upper, y_lower)
         elif isinstance(config, OffsetMeshAnalysisConfig):
+
             mesh1, mesh2 = geo_parser.create_offset_meshes(
                 config.left_bottom_corner, config.length, config.height,
                 config.mid_intersection, delta_1, delta_2_pctg, h,
                 mesh_option=config.mesh_option, gmsh_parameters=config.gmsh_parameters
             )
-            interface_handler = ih.InterfaceHandler(mesh1, mesh2)
-            bm1, bm2 = interface_handler.mark_interface_boundaries(2)
+            if delta_2_pctg == 0:
+                interface_handler = ih.OverlappingRectanglesInterfaceHandler(mesh1, mesh2)
+                y_upper = config.mid_intersection - (delta or delta_1) / 2
+                y_lower = config.mid_intersection + (delta or delta_1) / 2
+                bm1, bm2 = interface_handler.mark_interface_boundaries(y_upper, y_lower)
+            else:
+                interface_handler = ih.InterfaceHandler(mesh1, mesh2)
+                bm1, bm2 = interface_handler.mark_interface_boundaries(2)
 
         elif isinstance(config, ConformingMeshAnalysisConfig):
             mesh1, mesh2 = geo_parser.create_conforming_meshes(
@@ -480,8 +485,8 @@ class Analyser:
 
         diff_sq = (u1_values - u2_values) ** 2
 
-        mean_sq_error = np.mean(diff_sq)
-        error = np.sqrt(mean_sq_error)
+        #mean_sq_error = np.mean(diff_sq)
+        error = np.sqrt(np.sum(diff_sq))
 
         std = np.std(u1_values-u2_values)
 

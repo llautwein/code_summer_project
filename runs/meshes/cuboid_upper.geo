@@ -1,13 +1,13 @@
 //parsed geo-file
 
-lc = 0.25;
-Point(1) = {0.0, 0.0, 0.7495, lc};
+lc = 0.3;
+Point(1) = {0.0, 0.0, 0.7, lc};
 
-Point(2) = {1.0, 0.0, 0.7495, lc};
+Point(2) = {1.0, 0.0, 0.7, lc};
 
-Point(3) = {1.0, 1.0, 0.7495, lc};
+Point(3) = {1.0, 1.0, 0.7, lc};
 
-Point(4) = {0.0, 1.0, 0.7495, lc};
+Point(4) = {0.0, 1.0, 0.7, lc};
 
 Point(5) = {0.0, 0.0, 1.75, lc};
 
@@ -74,8 +74,8 @@ Field[1] = Distance;
 Field[1].SurfacesList = {1};
 Field[2] = Threshold;
 Field[2].IField = 1;
-Field[2].LcMin = 0.0033333333333333335;
-Field[2].LcMax = 0.25;
+Field[2].LcMin = 0.03;
+Field[2].LcMax = 0.3;
 Field[2].DistMin = 0.0;
 Field[2].DistMax = 0.1;
 Background Field = 2;

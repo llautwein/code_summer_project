@@ -1,19 +1,19 @@
 //parsed geo-file
 
-lc = 0.25;
-lc_overlap = 0.0001;
+lc = 0.1;
+lc_overlap = 0.0016666666666666668;
 
 Point(1) = {0.0, -0.25, 0, lc};
 
 Point(2) = {1.0, -0.25, 0, lc};
 
-Point(3) = {1.0, 0.74995, 0, lc_overlap};
+Point(3) = {1.0, 0.7, 0, lc_overlap};
 
-Point(4) = {0.0, 0.74995, 0, lc_overlap};
+Point(4) = {0.0, 0.7, 0, lc_overlap};
 
-Point(5) = {0.0, 0.75005, 0, lc_overlap};
+Point(5) = {0.0, 0.8, 0, lc_overlap};
 
-Point(6) = {1.0, 0.75005, 0, lc_overlap};
+Point(6) = {1.0, 0.8, 0, lc_overlap};
 
 Point(7) = {1.0, 1.75, 0, lc};
 

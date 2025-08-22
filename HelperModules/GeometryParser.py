@@ -225,7 +225,7 @@ class GeometryParser:
 
             num_nodes_on_edge = int(round(length / lc_min))
 
-            commands.append(f"Transfinite Line {{{edge_map[refine_edge]}}} = {num_nodes_on_edge + 1};")
+            commands.append(f"Transfinite Line {{{edge_map[refine_edge]}}} = {num_nodes_on_edge};")
 
             commands.append("\n// --- Mesh Refinement Fields ---")
             commands.append("Field[1] = Distance;")
